@@ -5,7 +5,7 @@ import Sidebar from './components/Sidebar';
 import Auth from './components/Auth';
 import ProfilePage from './pages/ProfilePage';
 import ChatPage from './pages/ChatPage';
-
+import ProjectsPage from './pages/ProjectsPage';
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +37,11 @@ if (!session) return <Auth />;
 )}
 
           {view === 'profile' && <ProfilePage session={session} />}
-          {view === 'projects' && <p>Projects coming in Phase 5</p>}
+          {view === 'projects' && (
+  <ProjectsPage session={session} activeProject={activeProject}
+    setActiveProject={setActiveProject} setView={setView} />
+)}
+
           {view === 'library' && <p>Library coming in Phase 7</p>}
         </div>
       </div>
