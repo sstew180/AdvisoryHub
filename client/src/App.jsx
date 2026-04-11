@@ -6,6 +6,7 @@ import Auth from './components/Auth';
 import ProfilePage from './pages/ProfilePage';
 import ChatPage from './pages/ChatPage';
 import ProjectsPage from './pages/ProjectsPage';
+import LibraryPage from './pages/LibraryPage';
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +43,7 @@ if (!session) return <Auth />;
     setActiveProject={setActiveProject} setView={setView} />
 )}
 
-          {view === 'library' && <p>Library coming in Phase 7</p>}
+          {view === 'library' && <LibraryPage session={session} />}
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage() });
 
 async function extractPdfText(buffer) {
   const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
@@ -25,8 +25,16 @@ async function extractPdfText(buffer) {
   return text;
 }
 
+router.get('/', async (req, res) => {
+  const { data, error } = await supabase.from('library_documents')
+    .select('id, title, category, domain, jurisdiction, description, source_url, default_enabled')
+    .order('category');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 router.post('/upload', upload.single('file'), async (req, res) => {
-  const { projectId, userId } = req.body;
+  const { title, category, domain, jurisdiction, description, sourceUrl } = req.body;
   const file = req.file;
   try {
     let content = '';
@@ -39,34 +47,16 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       content = file.buffer.toString('utf-8');
     }
     const embedding = await embed(content);
-    const { data, error } = await supabase.from('documents').insert({
-      project_id: projectId,
-      user_id: userId,
-      filename: file.originalname,
-      content: content.slice(0, 50000),
-      embedding
+    const { data, error } = await supabase.from('library_documents').insert({
+      title, category, domain, jurisdiction, description,
+      content: content.slice(0, 50000), source_url: sourceUrl, embedding
     }).select().single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
-    console.error('Document upload error:', err);
+    console.error('Library upload error:', err);
     res.status(500).json({ error: err.message });
   }
-});
-
-router.get('/:projectId', async (req, res) => {
-  const { data, error } = await supabase.from('documents')
-    .select('id, filename, created_at')
-    .eq('project_id', req.params.projectId)
-    .order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-router.delete('/:id', async (req, res) => {
-  const { error } = await supabase.from('documents').delete().eq('id', req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
 });
 
 module.exports = router;
