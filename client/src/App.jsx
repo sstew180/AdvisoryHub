@@ -4,7 +4,7 @@ import { supabase } from './lib/supabase';
 import Sidebar from './components/Sidebar';
 import Auth from './components/Auth';
 import ProfilePage from './pages/ProfilePage';
-
+import ChatPage from './pages/ChatPage';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -31,7 +31,11 @@ if (!session) return <Auth />;
         activeProject={activeProject} />
       <div className='main'>
         <div style={{ padding: 40, color: 'var(--text-muted)' }}>
-          {view === 'chat' && <p>Chat coming in Phase 4</p>}
+          {view === 'chat' && (
+  <ChatPage session={session} activeSessionId={activeSessionId}
+    setActiveSessionId={setActiveSessionId} activeProject={activeProject} />
+)}
+
           {view === 'profile' && <ProfilePage session={session} />}
           {view === 'projects' && <p>Projects coming in Phase 5</p>}
           {view === 'library' && <p>Library coming in Phase 7</p>}
