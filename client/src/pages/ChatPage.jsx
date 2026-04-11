@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Message from '../components/Message';
+import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 
@@ -69,6 +71,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         }
       }
       await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
+      const { data: allMsgs } = await supabase.from('messages')
+  .select('*').eq('session_id', sessionId).order('created_at');
+if (allMsgs && allMsgs.length > 0 && allMsgs.length % 10 === 0) {
+  axios.post(API + '/api/summarise', {
+    userId: session.user.id, sessionId, messages: allMsgs
+  }).catch(console.error);
+}
+
       if (messages.length === 0) {
         await supabase.from('sessions').update({ title: text.slice(0, 60) }).eq('id', sessionId);
       }
@@ -92,14 +102,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <div style={{ fontSize:14 }}>Risk, Audit and Insurance</div>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div key={i} className={'message ' + msg.role}>
-            <div className='message-role'>{msg.role === 'user' ? 'You' : 'AdvisoryHub'}</div>
-            <div className='message-content'>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-            </div>
-          </div>
-        ))}
+  {messages.map((msg, i) => (
+  <Message key={i} message={msg} session={session}
+    sessionId={activeSessionId} onPin={() => console.log('Pinned')} />
+))}
+
         <div ref={bottomRef} />
       </div>
       <div className='input-area'>
