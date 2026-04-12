@@ -8,7 +8,7 @@ const NAV = [
   { id: 'library', label: 'Library', icon: '📚' },
 ];
 
-export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId }) {
+export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [favorites, setFavorites] = useState([]);
 
@@ -27,46 +27,65 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       });
   }, [session, activeSessionId]);
 
+  const handleNav = (id) => {
+    if (id === 'chat') {
+      setActiveSessionId(null);
+      setView('chat');
+    } else {
+      setView(id);
+    }
+    onClose && onClose();
+  };
+
+  const handleSession = (id) => {
+    setActiveSessionId(id);
+    setView('chat');
+    onClose && onClose();
+  };
+
   return (
-    <div className='sidebar'>
-      <div className='sidebar-header'>
-        <span className='sidebar-logo'>AdvisoryHub</span>
-      </div>
-      <nav className='sidebar-nav'>
-        {NAV.map(item => (
-          <div key={item.id}
-            className={`nav-item ${view === item.id && item.id !== 'chat' ? 'active' : ''}`}
-            onClick={() => item.id === 'chat' ? (setActiveSessionId(null), setView('chat')) : setView(item.id)}>
-            <span>{item.icon}</span><span>{item.label}</span>
-          </div>
-        ))}
-      </nav>
-      <div className='sidebar-sessions'>
-        {favorites.length > 0 && <>
-          <div className='sidebar-section'>Favorites</div>
-          {favorites.map(s => (
-            <div key={s.id}
-              className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-              onClick={() => { setActiveSessionId(s.id); setView('chat'); }}>
-              {s.title || 'New session'}
+    <>
+      <div className={`sidebar-overlay ${isOpen ? 'visible' : ''}`} onClick={onClose} />
+      <div className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
+        <div className='sidebar-header'>
+          <span className='sidebar-logo'>AdvisoryHub</span>
+        </div>
+        <nav className='sidebar-nav'>
+          {NAV.map(item => (
+            <div key={item.id}
+              className={`nav-item ${view === item.id && item.id !== 'chat' ? 'active' : ''}`}
+              onClick={() => handleNav(item.id)}>
+              <span>{item.icon}</span><span>{item.label}</span>
             </div>
           ))}
-        </>}
-        {sessions.length > 0 && <>
-          <div className='sidebar-section'>Recents</div>
-          {sessions.map(s => (
-            <div key={s.id}
-              className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-              onClick={() => { setActiveSessionId(s.id); setView('chat'); }}>
-              {s.title || 'New session'}
-            </div>
-          ))}
-        </>}
+        </nav>
+        <div className='sidebar-sessions'>
+          {favorites.length > 0 && <>
+            <div className='sidebar-section'>Favorites</div>
+            {favorites.map(s => (
+              <div key={s.id}
+                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                onClick={() => handleSession(s.id)}>
+                {s.title || 'New session'}
+              </div>
+            ))}
+          </>}
+          {sessions.length > 0 && <>
+            <div className='sidebar-section'>Recents</div>
+            {sessions.map(s => (
+              <div key={s.id}
+                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                onClick={() => handleSession(s.id)}>
+                {s.title || 'New session'}
+              </div>
+            ))}
+          </>}
+        </div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+          <button className='btn btn-secondary' style={{ width: '100%', fontSize: 12 }}
+            onClick={() => supabase.auth.signOut()}>Sign out</button>
+        </div>
       </div>
-      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-        <button className='btn btn-secondary' style={{ width: '100%', fontSize: 12 }}
-          onClick={() => supabase.auth.signOut()}>Sign out</button>
-      </div>
-    </div>
+    </>
   );
 }

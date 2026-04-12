@@ -5,7 +5,7 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 
-export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject }) {
+export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -96,6 +96,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
       <div className='topbar'>
+        <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
+          <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
+            <rect x='2' y='4' width='16' height='2' rx='1' fill='currentColor'/>
+            <rect x='2' y='9' width='16' height='2' rx='1' fill='currentColor'/>
+            <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
+          </svg>
+        </button>
         <div className='mode-toggle'>
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>

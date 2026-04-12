@@ -13,6 +13,7 @@ export default function App() {
   const [view, setView] = useState('chat');
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -31,22 +32,40 @@ export default function App() {
         view={view} setView={setView} session={session}
         activeSessionId={activeSessionId} setActiveSessionId={setActiveSessionId}
         activeProject={activeProject}
+        isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}
       />
       <div className='main'>
         {view === 'chat' && (
           <ChatPage
             session={session} activeSessionId={activeSessionId}
             setActiveSessionId={setActiveSessionId} activeProject={activeProject}
+            onMenuOpen={() => setSidebarOpen(true)}
           />
         )}
-        {view === 'profile' && <ProfilePage session={session} />}
+        {view === 'profile' && (
+          <div className='page'>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <button className='hamburger' onClick={() => setSidebarOpen(true)} aria-label='Open menu'>
+                <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
+                  <rect x='2' y='4' width='16' height='2' rx='1' fill='currentColor'/>
+                  <rect x='2' y='9' width='16' height='2' rx='1' fill='currentColor'/>
+                  <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
+                </svg>
+              </button>
+            </div>
+            <ProfilePage session={session} />
+          </div>
+        )}
         {view === 'projects' && (
           <ProjectsPage
             session={session} activeProject={activeProject}
             setActiveProject={setActiveProject} setView={setView}
+            onMenuOpen={() => setSidebarOpen(true)}
           />
         )}
-        {view === 'library' && <LibraryPage session={session} />}
+        {view === 'library' && (
+          <LibraryPage session={session} onMenuOpen={() => setSidebarOpen(true)} />
+        )}
       </div>
     </>
   );
