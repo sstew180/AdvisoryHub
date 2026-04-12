@@ -13,6 +13,20 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Fix iPhone viewport height
+  useEffect(() => {
+    const setVh = () => {
+      document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
+    };
+    setVh();
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', setVh);
+    return () => {
+      window.removeEventListener('resize', setVh);
+      window.removeEventListener('orientationchange', setVh);
+    };
+  }, []);
+
   useEffect(() => {
     if (!activeSessionId) { setMessages([]); return; }
     supabase.from('messages').select('*').eq('session_id', activeSessionId)
@@ -94,7 +108,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden',
+      height: 'var(--real-vh, 100dvh)' }}>
       <div className='topbar'>
         <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
           <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
