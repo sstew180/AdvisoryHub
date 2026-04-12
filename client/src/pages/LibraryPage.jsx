@@ -4,18 +4,17 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
+const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '' };
 
 export default function LibraryPage({ session }) {
   const [docs, setDocs] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
-  const [form, setForm] = useState({
-    title: '', category: 'Framework', domain: 'Risk & Audit',
-    jurisdiction: 'Queensland', description: '', sourceUrl: ''
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const loadDocs = () => {
     setLoading(true);
@@ -37,9 +36,19 @@ export default function LibraryPage({ session }) {
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => fd.append(k, v));
     fd.append('file', file);
-    await axios.post(API + '/api/library/upload', fd);
-    loadDocs();
+    try {
+      await axios.post(API + '/api/library/upload', fd);
+      loadDocs();
+      // Reset title, description, sourceUrl -- keep category, domain, jurisdiction
+      setForm(f => ({ ...EMPTY_FORM, category: f.category, domain: f.domain, jurisdiction: f.jurisdiction }));
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 2000);
+    } catch {
+      setError('Upload failed. Please try again.');
+    }
     setUploading(false);
+    // Reset the file input
+    e.target.value = '';
   };
 
   const filtered = filter === 'All' ? docs : docs.filter(d => d.category === filter);
@@ -76,33 +85,45 @@ export default function LibraryPage({ session }) {
 
       {isAdmin && (
         <div className='card' style={{ marginBottom: 24 }}>
-          <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 14 }}>Upload document</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Upload document</div>
+            {uploadSuccess && (
+              <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>
+                Document uploaded
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
             Skills, Templates, and Organisation documents are injected into every Guided mode response automatically.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div className='form-group' style={{ margin: 0 }}>
               <label className='form-label'>Title</label>
-              <input className='form-input' value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+              <input className='form-input' value={form.title}
+                onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
             </div>
             <div className='form-group' style={{ margin: 0 }}>
               <label className='form-label'>Category</label>
-              <select className='form-select' value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              <select className='form-select' value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
                 {CATS.slice(1).map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div className='form-group' style={{ margin: 0 }}>
               <label className='form-label'>Jurisdiction</label>
-              <input className='form-input' value={form.jurisdiction} onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
+              <input className='form-input' value={form.jurisdiction}
+                onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
             </div>
             <div className='form-group' style={{ margin: 0 }}>
               <label className='form-label'>Source URL (optional)</label>
-              <input className='form-input' value={form.sourceUrl} onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
+              <input className='form-input' value={form.sourceUrl}
+                onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
             </div>
           </div>
           <div className='form-group'>
             <label className='form-label'>Description</label>
-            <input className='form-input' value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            <input className='form-input' value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
           </div>
           <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
             {uploading ? 'Uploading and embedding...' : 'Choose file and upload'}
