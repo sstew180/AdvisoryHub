@@ -94,7 +94,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
       <div className='topbar'>
         <div className='mode-toggle'>
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
