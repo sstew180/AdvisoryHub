@@ -26,9 +26,11 @@ async function extractPdfText(buffer) {
 }
 
 router.get('/', async (req, res) => {
+  console.log('Library route hit');
   const { data, error } = await supabase.from('library_documents')
     .select('id, title, category, domain, jurisdiction, description, source_url, default_enabled')
     .order('category');
+  console.log('Library data:', data?.length, 'error:', error);
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
