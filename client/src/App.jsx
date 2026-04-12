@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import Sidebar from './components/Sidebar';
@@ -7,6 +6,7 @@ import ProfilePage from './pages/ProfilePage';
 import ChatPage from './pages/ChatPage';
 import ProjectsPage from './pages/ProjectsPage';
 import LibraryPage from './pages/LibraryPage';
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,28 +23,30 @@ export default function App() {
   }, []);
 
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading...</div>;
-if (!session) return <Auth />;
+  if (!session) return <Auth />;
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar view={view} setView={setView} session={session}
+      <Sidebar
+        view={view} setView={setView} session={session}
         activeSessionId={activeSessionId} setActiveSessionId={setActiveSessionId}
-        activeProject={activeProject} />
+        activeProject={activeProject}
+      />
       <div className='main'>
-        <div style={{ padding: 40, color: 'var(--text-muted)' }}>
-          {view === 'chat' && (
-  <ChatPage session={session} activeSessionId={activeSessionId}
-    setActiveSessionId={setActiveSessionId} activeProject={activeProject} />
-)}
-
-          {view === 'profile' && <ProfilePage session={session} />}
-          {view === 'projects' && (
-  <ProjectsPage session={session} activeProject={activeProject}
-    setActiveProject={setActiveProject} setView={setView} />
-)}
-
-          {view === 'library' && <LibraryPage session={session} />}
-        </div>
+        {view === 'chat' && (
+          <ChatPage
+            session={session} activeSessionId={activeSessionId}
+            setActiveSessionId={setActiveSessionId} activeProject={activeProject}
+          />
+        )}
+        {view === 'profile' && <ProfilePage session={session} />}
+        {view === 'projects' && (
+          <ProjectsPage
+            session={session} activeProject={activeProject}
+            setActiveProject={setActiveProject} setView={setView}
+          />
+        )}
+        {view === 'library' && <LibraryPage session={session} />}
       </div>
     </div>
   );
