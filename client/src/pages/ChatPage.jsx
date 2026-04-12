@@ -23,7 +23,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-resize textarea as user types
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -117,23 +116,25 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         <div ref={bottomRef} />
       </div>
       <div className='input-area'>
-        <div className='input-box'>
-          <textarea
-            ref={textareaRef}
-            className='input-textarea'
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-            placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
-            rows={1}
-          />
-          <div className='input-footer'>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
-            </span>
-            <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
-              {streaming ? '...' : 'Send'}
-            </button>
+        <div className='input-area-inner'>
+          <div className='input-box'>
+            <textarea
+              ref={textareaRef}
+              className='input-textarea'
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
+              rows={1}
+            />
+            <div className='input-footer'>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
+              </span>
+              <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
+                {streaming ? '...' : 'Send'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

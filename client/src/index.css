@@ -39,7 +39,7 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
 .session-item:hover { background: var(--surface); }
 .session-item.active { color: var(--text-primary); font-weight: 500; }
 .sidebar-sessions { flex: 1; overflow-y: auto; }
-.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 48px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0; }
 .mode-toggle { display: flex; gap: 2px; background: var(--surface);
@@ -69,7 +69,9 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
 .action-btn { font-size: 11px; color: var(--text-muted); background: none; border: none;
   cursor: pointer; padding: 2px 6px; border-radius: 3px; transition: all 0.1s; }
 .action-btn:hover { background: var(--surface); color: var(--text-primary); }
-.input-area { padding: 16px 48px 24px; max-width: 800px; width: 100%; margin: 0 auto; }
+.chat-wrapper { display: flex; flex-direction: column; flex: 1; overflow: hidden; width: 100%; }
+.input-area { padding: 16px 48px 24px; width: 100%; }
+.input-area-inner { max-width: 800px; margin: 0 auto; }
 .input-box { border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
   box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
 .input-textarea { width: 100%; padding: 14px 16px; border: none; outline: none;
