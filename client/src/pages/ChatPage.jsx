@@ -94,7 +94,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
       <div className='topbar'>
         <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
           <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
