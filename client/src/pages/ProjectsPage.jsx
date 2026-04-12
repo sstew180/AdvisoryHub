@@ -1,9 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import axios from 'axios';
+
 const API = import.meta.env.VITE_API_URL;
-const blank = { name:'', description:'', objectives:'', custom_instructions:'', high_scrutiny:false, profile_override:false };
+const blank = { name: '', description: '', objectives: '', custom_instructions: '', high_scrutiny: false, profile_override: false };
 
 export default function ProjectsPage({ session, activeProject, setActiveProject, setView }) {
   const [projects, setProjects] = useState([]);
@@ -48,46 +48,56 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
 
   if (editing) return (
     <div className='page'>
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button className='btn btn-secondary' onClick={() => setEditing(null)}>&larr; Back</button>
-        <div className='page-title' style={{ margin:0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
+        <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
       </div>
-      <div style={{ maxWidth:560 }}>
-        <div className='form-group'><label className='form-label'>Project Name</label>
-          <input className='form-input' value={editing.name} onChange={e => setEditing(p => ({...p, name: e.target.value}))} /></div>
-        <div className='form-group'><label className='form-label'>Background and Context</label>
-          <textarea className='form-textarea' value={editing.description} onChange={e => setEditing(p => ({...p, description: e.target.value}))} /></div>
-        <div className='form-group'><label className='form-label'>Objectives</label>
-          <textarea className='form-textarea' value={editing.objectives} onChange={e => setEditing(p => ({...p, objectives: e.target.value}))} /></div>
-        <div className='form-group'><label className='form-label'>Custom AI Instructions</label>
+      <div className='page-content'>
+        <div className='form-group'>
+          <label className='form-label'>Project Name</label>
+          <input className='form-input' value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} />
+        </div>
+        <div className='form-group'>
+          <label className='form-label'>Background and Context</label>
+          <textarea className='form-textarea' value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} />
+        </div>
+        <div className='form-group'>
+          <label className='form-label'>Objectives</label>
+          <textarea className='form-textarea' value={editing.objectives} onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))} />
+        </div>
+        <div className='form-group'>
+          <label className='form-label'>Custom AI Instructions</label>
           <textarea className='form-textarea' value={editing.custom_instructions}
-            onChange={e => setEditing(p => ({...p, custom_instructions: e.target.value}))}
-            placeholder='Specific guidance for AI responses on this project' /></div>
-        <div style={{ display:'flex', gap:16, marginBottom:16 }}>
-          <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--text-secondary)', cursor:'pointer' }}>
-            <input type='checkbox' checked={editing.high_scrutiny} onChange={e => setEditing(p => ({...p, high_scrutiny: e.target.checked}))} />
+            onChange={e => setEditing(p => ({ ...p, custom_instructions: e.target.value }))}
+            placeholder='Specific guidance for AI responses on this project' />
+        </div>
+        <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type='checkbox' checked={editing.high_scrutiny} onChange={e => setEditing(p => ({ ...p, high_scrutiny: e.target.checked }))} />
             High scrutiny mode
           </label>
-          <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--text-secondary)', cursor:'pointer' }}>
-            <input type='checkbox' checked={editing.profile_override} onChange={e => setEditing(p => ({...p, profile_override: e.target.checked}))} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type='checkbox' checked={editing.profile_override} onChange={e => setEditing(p => ({ ...p, profile_override: e.target.checked }))} />
             Project overrides profile
           </label>
         </div>
-        <div style={{ display:'flex', gap:8, marginBottom:32 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
           <button className='btn btn-primary' onClick={save}>Save</button>
           <button className='btn btn-secondary' onClick={() => setEditing(null)}>Cancel</button>
         </div>
         {editing.id && <>
-          <div className='page-title' style={{ fontSize:16, marginBottom:12 }}>Documents</div>
-          <label className='btn btn-secondary' style={{ cursor:'pointer', marginBottom:12, display:'inline-block' }}>
+          <div className='page-title' style={{ fontSize: 16, marginBottom: 12 }}>Documents</div>
+          <label className='btn btn-secondary' style={{ cursor: 'pointer', marginBottom: 12, display: 'inline-block' }}>
             {uploading ? 'Uploading...' : 'Upload document (PDF, DOCX, TXT)'}
-            <input type='file' style={{ display:'none' }} accept='.pdf,.docx,.txt,.md' onChange={uploadDoc} />
+            <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={uploadDoc} />
           </label>
           {docs.map(d => (
-            <div key={d.id} className='card' style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div><div className='card-title'>{d.filename}</div>
-                <div className='card-meta'>{new Date(d.created_at).toLocaleDateString()}</div></div>
-              <button className='btn btn-danger' style={{ fontSize:12 }} onClick={() => delDoc(d.id)}>Remove</button>
+            <div key={d.id} className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className='card-title'>{d.filename}</div>
+                <div className='card-meta'>{new Date(d.created_at).toLocaleDateString()}</div>
+              </div>
+              <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => delDoc(d.id)}>Remove</button>
             </div>
           ))}
         </>}
@@ -97,28 +107,27 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
 
   return (
     <div className='page'>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
-        <div className='page-title' style={{ margin:0 }}>Projects</div>
-        <button className='btn btn-primary' onClick={() => setEditing({...blank})}>New Project</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div className='page-title' style={{ margin: 0 }}>Projects</div>
+        <button className='btn btn-primary' onClick={() => setEditing({ ...blank })}>New Project</button>
       </div>
       {projects.map(p => (
-        <div key={p.id} className='card' style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-          <div style={{ flex:1 }}>
+        <div key={p.id} className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
             <div className='card-title'>{p.name}</div>
-            <div className='card-meta'>{p.description?.slice(0,100)}</div>
+            <div className='card-meta'>{p.description?.slice(0, 100)}</div>
           </div>
-          <div style={{ display:'flex', gap:8, marginLeft:16 }}>
-            <button className='btn btn-secondary' style={{ fontSize:12 }} onClick={() => setEditing(p)}>Edit</button>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 16 }}>
+            <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(p)}>Edit</button>
             {activeProject?.id === p.id
-              ? <button className='btn btn-secondary' style={{ fontSize:12, color:'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
-              : <button className='btn btn-primary' style={{ fontSize:12 }} onClick={() => { setActiveProject(p); setView('chat'); }}>Use in chat</button>
+              ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
+              : <button className='btn btn-primary' style={{ fontSize: 12 }} onClick={() => { setActiveProject(p); setView('chat'); }}>Use in chat</button>
             }
-            <button className='btn btn-danger' style={{ fontSize:12 }} onClick={() => del(p.id)}>Delete</button>
+            <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => del(p.id)}>Delete</button>
           </div>
         </div>
       ))}
-      {projects.length === 0 && <p style={{ color:'var(--text-muted)' }}>No projects yet. Create one to organise your work.</p>}
+      {projects.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No projects yet. Create one to organise your work.</p>}
     </div>
   );
 }
-

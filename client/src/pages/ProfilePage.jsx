@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -27,7 +26,7 @@ export default function ProfilePage({ session }) {
   return (
     <div className='page'>
       <div className='page-title'>Profile</div>
-      <div style={{ maxWidth: 560 }}>
+      <div className='page-content'>
         <div className='form-group'>
           <label className='form-label'>Role</label>
           <input className='form-input' value={profile.role}
@@ -61,7 +60,7 @@ export default function ProfilePage({ session }) {
             <option value='memo'>Memo</option>
           </select>
         </div>
-        <div className='form-group' style={{ display:'flex', alignItems:'center', gap: 10 }}>
+        <div className='form-group' style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <input type='checkbox' id='scrutiny' checked={profile.high_scrutiny}
             onChange={e => u('high_scrutiny', e.target.checked)} />
           <label htmlFor='scrutiny' style={{ fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
