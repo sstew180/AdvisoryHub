@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-6', max_tokens: 2048, system: systemPrompt, messages
+      model: 'claude-sonnet-4-6', max_tokens: 8192, system: systemPrompt, messages
     });
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
