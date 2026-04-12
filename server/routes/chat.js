@@ -36,19 +36,13 @@ router.post('/', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(5);
 
-    // 6. Library docs -- vector matched (frameworks, legislation, best practice etc)
-    const { data: libraryDocs } = await supabase.rpc('match_library_by_category', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.7,
-      match_count: 5,
-      excluded_categories: ['Skills', 'Templates', 'Organisation']
-    }).catch(() => null);
-
-    // Fallback if new RPC not yet created -- use original
-    const { data: libraryDocsAlt } = libraryDocs ? { data: null } : await supabase.rpc('match_library', {
-      query_embedding: queryEmbedding, match_threshold: 0.7, match_count: 5
+    // 6. Library docs -- vector matched, exclude always-injected categories
+    const { data: allLibraryDocs } = await supabase.rpc('match_library', {
+      query_embedding: queryEmbedding, match_threshold: 0.7, match_count: 8
     });
-    const resolvedLibraryDocs = libraryDocs || libraryDocsAlt || [];
+    const resolvedLibraryDocs = (allLibraryDocs || []).filter(
+      d => !['Skills', 'Templates', 'Organisation'].includes(d.category)
+    );
 
     // 7. Skills -- always inject all in Guided mode
     let skillDocs = [];
@@ -72,7 +66,7 @@ router.post('/', async (req, res) => {
       templateDocs = data || [];
     }
 
-    // 9. Organisation docs -- always inject all in Guided mode (brand guide, style guide etc)
+    // 9. Organisation docs -- always inject all in Guided mode
     let orgDocs = [];
     if (mode !== 'direct') {
       const { data } = await supabase
@@ -100,7 +94,7 @@ router.post('/', async (req, res) => {
     console.log('Project:', project ? project.name : 'none');
     console.log('Memories:', memories ? memories.length : 0);
     console.log('Session summaries:', recentSessions ? recentSessions.length : 0);
-    console.log('Library docs:', resolvedLibraryDocs ? resolvedLibraryDocs.map(d => d.title) : []);
+    console.log('Library docs:', resolvedLibraryDocs.map(d => d.title));
     console.log('Skills:', skillDocs.map(d => d.title));
     console.log('Templates:', templateDocs.map(d => d.title));
     console.log('Org docs:', orgDocs.map(d => d.title));
@@ -159,7 +153,7 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     if (profile.high_scrutiny) p += '\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.';
   }
 
-  // Organisation docs (brand guide, style guide -- always present in guided mode)
+  // Organisation docs
   if (orgDocs && orgDocs.length > 0) {
     p += '\n\n## Organisation Guidelines';
     orgDocs.forEach(d => {
@@ -193,7 +187,7 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Skills (always injected in guided mode)
+  // Skills
   if (skillDocs && skillDocs.length > 0) {
     p += '\n\n## Skills and Approaches';
     skillDocs.forEach(d => {
@@ -202,7 +196,7 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Templates (always injected in guided mode)
+  // Templates
   if (templateDocs && templateDocs.length > 0) {
     p += '\n\n## Available Templates';
     p += '\nThe following templates are available. When the user asks to complete a template, ' +
@@ -213,7 +207,7 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Library docs (vector-matched frameworks, legislation, best practice)
+  // Library docs
   if (libraryDocs && libraryDocs.length > 0) {
     p += '\n\n## Relevant Frameworks and Guidance';
     libraryDocs.forEach(d => {
@@ -223,7 +217,7 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Project documents (vector-matched)
+  // Project documents
   if (projectDocs && projectDocs.length > 0) {
     p += '\n\n## Project Documents';
     projectDocs.forEach(d => {
