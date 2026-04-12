@@ -1,0 +1,55 @@
+{
+  "userId": "b26e71d8-7ba9-45da-8101-12213fb592de",
+  "project": {
+    "name": "Internal Audit Program 2026-27",
+    "description": "The City of Gold Coast Internal Audit team is developing the annual internal audit program for 2026-27. The program must be risk-based, aligned with the City's enterprise risk framework, and satisfy the requirements of the Local Government Act 2009 (Qld) and the QAO Better Practice Guide for Internal Audit. The Audit and Risk Committee endorses the program in May 2026 for commencement 1 July 2026. The team has a budget of approximately 800 hours for the year across four to five audits.",
+    "objectives": "1. Develop a risk-based audit universe covering all major service areas and corporate functions. 2. Select four to five audit topics using a structured prioritisation methodology. 3. Prepare the annual audit program document for ARC endorsement. 4. Ensure coverage of QAO priority areas for Queensland local government in 2026-27.",
+    "custom_instructions": "Responses should be practical and actionable for an internal audit team in a Queensland local government. Reference the QAO Better Practice Guide for Internal Audit and the Three Lines Model where relevant. Output formats should be appropriate for ARC presentation. Flag any areas where independent legal or technical advice may be required.",
+    "high_scrutiny": false
+  },
+  "memories": [
+    "ARC has requested that the 2026-27 program include at least one audit of AI and technology governance given the City's increasing use of digital tools and the QAO's sector-wide focus on this area.",
+    "Last year's fraud and corruption control audit found three medium-rated findings related to procurement card controls and contractor engagement. Follow-up verification is due in Q1 2026-27 and should be built into the program.",
+    "Budget confirmed at 800 hours for 2026-27. Chief Audit Executive has indicated a preference for four substantive audits plus a follow-up program, rather than five full audits.",
+    "QAO conducted a performance audit of asset management across Queensland local governments in 2025. The City received a qualified finding. Internal audit coverage of asset management processes would be well-timed for 2026-27.",
+    "The City is implementing a new ERP system (SAP S/4HANA) commencing October 2026. Pre-implementation controls review has been flagged as high priority by the CFO and should be considered for inclusion in the program."
+  ],
+  "sessions": [
+    {
+      "title": "Audit universe and risk prioritisation",
+      "summary": "The internal audit team developed a risk-based audit universe for 2026-27 using a structured prioritisation methodology. Key factors used in scoring included inherent risk, control maturity, time since last audit, and strategic significance. Top-ranked areas were ERP pre-implementation controls, AI and technology governance, asset management, and procurement and contract management. The fraud and corruption follow-up was confirmed as a separate workstream.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I need to build a risk-based audit universe for 2026-27 and prioritise it for ARC. Can you help me with a scoring methodology?"
+        },
+        {
+          "role": "assistant",
+          "content": "A risk-based audit universe for a Queensland local government should cover all significant activities, systems, and processes -- then use a structured scoring model to prioritise which areas receive audit attention in the coming year.\n\n**Step 1: Build the audit universe**\n\nOrganise by category:\n- **Corporate governance** -- risk management, compliance, internal controls, fraud and corruption\n- **Financial management** -- procurement, accounts payable/receivable, payroll, asset management\n- **People and culture** -- WHS, HR compliance, workforce planning\n- **Technology** -- cyber security, ERP systems, AI governance, data management\n- **Service delivery** -- major service areas (planning, infrastructure, community services, etc.)\n- **Projects** -- major capital works and transformation programs\n\n**Step 2: Score each area using four factors**\n\n| Factor | Score 1-5 | Description |\n|---|---|---|\n| Inherent risk | 1-5 | Risk level if no controls existed |\n| Control maturity | 5-1 | Lower score = weaker controls (inverse) |\n| Time since last audit | 1-5 | 5 = never audited or 5+ years ago |\n| Strategic significance | 1-5 | Alignment to strategic objectives and ARC priorities |\n\nTotal score out of 20. Top-scoring areas form the proposed program.\n\n**Step 3: Apply mandatory overlays**\nRegardless of score, certain areas may require inclusion due to ARC direction, QAO focus areas, or regulatory requirements. For 2026-27 these would include: AI and technology governance (ARC direction), ERP pre-implementation review (CFO request), and fraud and corruption follow-up (prior findings).\n\nWould you like me to apply this scoring model to a list of your specific audit universe items?\n\n*Source: QAO Better Practice Guide: Internal Audit -- Risk-based audit planning*"
+        },
+        {
+          "role": "user",
+          "content": "Yes -- score these areas for me: ERP pre-implementation, AI governance, asset management, procurement and contracts, WHS compliance, rates and revenue, development assessment."
+        },
+        {
+          "role": "assistant",
+          "content": "Here is the scored audit universe based on your areas and the context from this project. Scores are indicative -- adjust based on your specific knowledge of control maturity in each area.\n\n| Audit Area | Inherent Risk | Control Maturity (inv) | Time Since Audit | Strategic Significance | Total | Priority |\n|---|---|---|---|---|---|---|\n| ERP pre-implementation controls | 5 | 4 | 5 | 5 | **19** | 1 |\n| AI and technology governance | 4 | 4 | 5 | 5 | **18** | 2 |\n| Asset management | 4 | 3 | 4 | 4 | **15** | 3 |\n| Procurement and contracts | 4 | 3 | 3 | 4 | **14** | 4 |\n| WHS compliance | 3 | 3 | 3 | 3 | **12** | 5 |\n| Development assessment | 3 | 3 | 3 | 3 | **12** | 5 |\n| Rates and revenue | 3 | 4 | 4 | 2 | **13** | 6 |\n\n**Recommended 2026-27 program:**\n1. ERP pre-implementation controls review (high priority, CFO request, 200 hours)\n2. AI and technology governance (ARC direction, 180 hours)\n3. Asset management (QAO sector finding, 180 hours)\n4. Procurement and contract management (200 hours)\n5. Fraud and corruption follow-up (prior findings, 40 hours)\n\nTotal: 800 hours -- within your confirmed budget.\n\nWHS and development assessment score competitively and should be carried forward to the 2027-28 universe as priority candidates.\n\n*Note: ERP pre-implementation scoring assumes the October 2026 go-live creates significant inherent risk and that pre-implementation controls review has not previously been conducted. Verify control maturity ratings with business owners before finalising.*"
+        }
+      ]
+    },
+    {
+      "title": "AI governance audit scope",
+      "summary": "The team scoped the AI and technology governance audit for 2026-27. The audit objective is to assess whether the City has adequate governance frameworks, policies, and controls over the use of AI and automated decision-making tools. Key focus areas include AI policy and procurement, human oversight controls, data privacy obligations, and staff training. The scope was refined to focus on corporate AI tools rather than operational technology systems.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Can you help me write the audit scope and objectives for the AI governance audit?"
+        },
+        {
+          "role": "assistant",
+          "content": "Here is a draft audit scope and objectives for an AI governance audit at a Queensland local government.\n\n---\n\n**Audit: AI and Technology Governance**\n**Planned: Q2 2026-27 | Budget: 180 hours**\n\n**Background**\nThe City of Gold Coast is increasing its use of artificial intelligence and automated decision-making tools across corporate and service delivery functions. The Audit and Risk Committee has identified AI governance as a priority area for 2026-27 given the pace of adoption and the absence of a comprehensive AI governance framework.\n\n**Audit Objective**\nTo assess whether the City has adequate governance, policies, and controls to manage the risks associated with the use of AI and automated decision-making tools, including risks to data privacy, service delivery integrity, and regulatory compliance.\n\n**Scope**\nThis audit covers corporate AI tools adopted or under evaluation across the City for the period 1 July 2025 to 30 June 2026. It excludes operational technology systems (e.g. traffic management, SCADA) which will be considered in a separate technology audit.\n\n**Key Lines of Enquiry**\n1. Does the City have an AI governance policy or framework, and is it being applied consistently?\n2. Are AI tools assessed for privacy, security, and ethical risks before adoption?\n3. Are there adequate human oversight controls for AI-assisted decisions that affect residents or staff?\n4. Do staff using AI tools receive appropriate training and guidance?\n5. Is there a register of AI tools in use, and is it current?\n\n**Criteria**\n- City of Gold Coast ICT and AI acceptable use policies\n- Information Privacy Act 2009 (Qld) and Privacy Principles\n- Queensland Government AI Ethics Principles\n- ISO 42001 AI Management System (reference standard)\n\n**Proposed Deliverable**\nInternal audit report with findings rated using the City's standard CCAR format (Criteria, Condition, Cause, Risk, Recommendation), presented to ARC at the November 2026 meeting.\n\n---\n\nWould you like me to develop the detailed audit program and testing approach for any of the key lines of enquiry?"
+        }
+      ]
+    }
+  ]
+}

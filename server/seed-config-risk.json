@@ -1,0 +1,55 @@
+{
+  "userId": "b26e71d8-7ba9-45da-8101-12213fb592de",
+  "project": {
+    "name": "Enterprise Risk Framework Review 2026",
+    "description": "The City of Gold Coast is reviewing its enterprise risk management framework to align with ISO 31000:2018 and Queensland Audit Office better practice guidance. The current framework was last updated in 2021 and does not reflect recent changes to the organisational structure, the introduction of digital service delivery risks, or updated QAO expectations for local government. The review is being led by the Risk and Insurance team with input from internal audit and key service areas.",
+    "objectives": "1. Assess the current ERM framework against ISO 31000:2018 and QAO better practice. 2. Identify gaps in risk appetite statement, risk assessment methodology, and treatment planning. 3. Produce a revised framework document for endorsement by the Audit and Risk Committee by Q3 2026. 4. Develop an implementation and communication plan for operational managers.",
+    "custom_instructions": "Responses should be appropriate for presentation to an Audit and Risk Committee. Reference ISO 31000 and QAO better practice guides where relevant. Use Queensland local government context throughout. Flag any assumptions that require verification with the City's legal or insurance teams.",
+    "high_scrutiny": true
+  },
+  "memories": [
+    "Risk appetite statement currently uses a qualitative five-level scale (Negligible to Critical). Committee has requested alignment with the City's strategic objectives in the revised framework. Decision made at February 2026 ARC meeting.",
+    "Key gap identified: current framework does not address emerging technology and AI-related risks. This needs to be included as a new risk category in the revised methodology.",
+    "External consultant engaged to benchmark against Brisbane City Council and Sunshine Coast Council frameworks. Benchmarking report expected May 2026.",
+    "QAO indicated in their 2025 management letter that risk treatment plans lack measurable targets and timeframes. This is a priority finding to address in the revised framework.",
+    "Stakeholder consultation planned for March 2026 with Directors and ELT. Risk and Insurance team to prepare a one-page summary of proposed changes for non-technical audience."
+  ],
+  "sessions": [
+    {
+      "title": "Risk appetite statement redraft",
+      "summary": "The officer discussed redrafting the City's risk appetite statement to align with ISO 31000 and QAO expectations. Key decisions included adopting a structured format with explicit risk appetite levels per strategic objective, and adding a separate section for technology and emerging risks. The draft was to be reviewed by the CFO before ARC submission.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I need to redraft our risk appetite statement to align with ISO 31000 and QAO better practice. Our current statement is too generic. Can you help me structure a better version?"
+        },
+        {
+          "role": "assistant",
+          "content": "A well-structured risk appetite statement for a Queensland local government should do three things: articulate the overall organisational attitude to risk, define specific appetite levels for different risk categories, and link those levels to strategic objectives so they can guide decision-making.\n\n**Recommended structure:**\n\n**1. Preamble (1-2 sentences)**\nState the City's overall risk philosophy -- typically something that acknowledges risk as inherent in service delivery while committing to managed, informed risk-taking.\n\n**2. Risk appetite by category**\nFor each major risk category (strategic, operational, financial, compliance, reputational, technology) define the appetite level using consistent language:\n- **Zero tolerance** -- risks that must be avoided entirely (e.g. serious safety incidents, fraud, regulatory breaches)\n- **Low appetite** -- acceptable only with strong controls and regular monitoring\n- **Moderate appetite** -- acceptable where benefits outweigh costs and controls are in place\n- **Higher appetite** -- acceptable in areas where innovation and experimentation are encouraged\n\n**3. Link to strategic objectives**\nFor each strategic objective, note the risk appetite that applies. This is what QAO specifically looks for -- they want to see that appetite statements actually influence decision-making, not just sit in a document.\n\n**4. Review and accountability**\nState who owns the risk appetite (typically the CEO and ELT), who endorses it (ARC), and how often it is reviewed.\n\nWould you like me to draft specific language for any of these sections? If you can share your current strategic objectives I can tailor the appetite statements to them directly.\n\n*Source: ISO 31000:2018 Section 5.4 -- Leadership and commitment; QAO Better Practice Guide Risk Management (2023)*"
+        },
+        {
+          "role": "user",
+          "content": "Yes please draft the technology risk section given our emerging AI risks concern."
+        },
+        {
+          "role": "assistant",
+          "content": "Here is a draft technology and AI risk appetite section suitable for inclusion in the City's risk appetite statement:\n\n---\n\n**Technology and Emerging Technology Risk**\n\nThe City of Gold Coast recognises that technology risk, including cyber security, data governance, and the adoption of artificial intelligence and automated decision-making, is a material and growing risk category for local government service delivery.\n\n*Overall appetite: Low to Moderate*\n\nThe City has a **low appetite** for technology risks that could:\n- Compromise the confidentiality, integrity, or availability of Council systems or resident data\n- Result in regulatory non-compliance under the Information Privacy Act 2009 (Qld) or the Right to Information Act 2009 (Qld)\n- Cause significant disruption to critical service delivery\n\nThe City has a **moderate appetite** for technology risks associated with:\n- Piloting and evaluating emerging technologies, including AI-assisted tools, where appropriate governance and human oversight controls are in place\n- Digital transformation initiatives where benefits to service delivery are demonstrable and risks are actively managed\n\n*AI-specific provisions:*\nAny deployment of artificial intelligence or automated decision-making tools that affects residents or staff must be subject to a documented risk assessment, endorsed by the relevant Director, and reviewed annually. No AI tool shall be used to make final decisions on matters affecting individual residents without human review.\n\n---\n\nThis language is consistent with the emerging Queensland Government AI governance framework and positions the City ahead of most local government peers on this issue. I would recommend the CFO and General Counsel review the AI-specific provisions before ARC submission.\n\n*Note: This is a draft for discussion purposes. Verify alignment with current ICT policy and any whole-of-government AI directives before finalising.*"
+        }
+      ]
+    },
+    {
+      "title": "Gap analysis against ISO 31000",
+      "summary": "The officer conducted a structured gap analysis of the City's current ERM framework against ISO 31000:2018. The analysis identified five key gaps: risk appetite not linked to strategic objectives, treatment plans lacking measurable targets, no formal risk communication plan, emerging technology risks not addressed, and the risk register not integrated with project governance. Priority actions were agreed for each gap.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Can you help me structure a gap analysis of our current framework against ISO 31000? I want something I can present to the ARC."
+        },
+        {
+          "role": "assistant",
+          "content": "A gap analysis structured for ARC presentation should be clear, evidence-based, and action-oriented. Here is a recommended format and the key gaps you are likely to find based on the QAO's observations of Queensland local government risk frameworks.\n\n**Recommended format: Five-column table**\n| ISO 31000 Requirement | Current State | Gap | Risk of Not Addressing | Recommended Action |\n\n**Key gaps commonly found in Queensland local government frameworks:**\n\n**1. Risk appetite not linked to strategic objectives** (ISO 31000 Section 5.4)\nMost councils have a generic appetite statement that is not calibrated to specific strategic objectives. QAO consistently flags this. Recommended action: Restructure appetite statement by strategic objective and risk category.\n\n**2. Treatment plans lack measurable targets** (ISO 31000 Section 6.5)\nRisk treatments are often stated as activities rather than outcomes with measurable targets and timeframes. Recommended action: Require SMART criteria for all treatment plans in the updated risk register template.\n\n**3. No formal risk communication and consultation plan** (ISO 31000 Section 6.2)\nMost frameworks address risk identification and treatment but not how risk information flows through the organisation. Recommended action: Develop a one-page risk communication framework covering reporting lines, frequency, and escalation triggers.\n\n**4. Emerging technology and AI risks not categorised** \nPre-2022 frameworks typically do not include technology risk as a distinct category. Recommended action: Add technology and AI as explicit risk categories with tailored assessment criteria.\n\n**5. Risk register not integrated with project governance**\nProject risks are often managed separately from the enterprise risk register, creating blind spots. Recommended action: Require all projects above a threshold cost to register material risks in the ERM system.\n\nWould you like me to expand any of these into full gap analysis entries with supporting evidence from ISO 31000 and the QAO better practice guide?"
+        }
+      ]
+    }
+  ]
+}

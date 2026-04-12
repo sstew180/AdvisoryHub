@@ -41,15 +41,23 @@ function groupSessions(sessions) {
 
 export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [projectFilter, setProjectFilter] = useState('all');
 
   useEffect(() => {
     if (!session) return;
     supabase.from('sessions')
-      .select('id, title, created_at')
+      .select('id, title, created_at, project_id')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .limit(60)
       .then(({ data }) => { if (data) setSessions(data); });
+
+    supabase.from('projects')
+      .select('id, name')
+      .eq('user_id', session.user.id)
+      .order('name')
+      .then(({ data }) => { if (data) setProjects(data); });
   }, [session, activeSessionId]);
 
   const handleNav = (id) => {
@@ -64,7 +72,13 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
-  const groups = groupSessions(sessions);
+  const filteredSessions = sessions.filter(s => {
+    if (projectFilter === 'all') return true;
+    if (projectFilter === 'none') return !s.project_id;
+    return s.project_id === projectFilter;
+  });
+
+  const groups = groupSessions(filteredSessions);
 
   return (
     <>
@@ -82,6 +96,26 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
             </div>
           ))}
         </nav>
+        <div className='project-filter'>
+          <button
+            className={`project-filter-pill ${projectFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setProjectFilter('all')}>
+            All
+          </button>
+          <button
+            className={`project-filter-pill ${projectFilter === 'none' ? 'active' : ''}`}
+            onClick={() => setProjectFilter('none')}>
+            No project
+          </button>
+          {projects.map(p => (
+            <button
+              key={p.id}
+              className={`project-filter-pill ${projectFilter === p.id ? 'active' : ''}`}
+              onClick={() => setProjectFilter(p.id)}>
+              {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
+            </button>
+          ))}
+        </div>
         <div className='sidebar-sessions'>
           {groups.map(group => (
             <div key={group.label}>
@@ -96,9 +130,9 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
               ))}
             </div>
           ))}
-          {sessions.length === 0 && (
+          {filteredSessions.length === 0 && (
             <div style={{ padding: '16px', fontSize: 12, color: 'var(--text-muted)' }}>
-              No sessions yet
+              {projectFilter === 'all' ? 'No sessions yet' : 'No sessions for this filter'}
             </div>
           )}
         </div>
