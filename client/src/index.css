@@ -34,13 +34,16 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
   transition: background 0.1s, color 0.1s; text-decoration: none; }
 .nav-item:hover { background: var(--surface); color: var(--text-primary); }
 .nav-item.active { color: var(--accent); font-weight: 500; }
-.sidebar-section { padding: 16px 16px 4px; font-size: 11px; font-weight: 600;
+.sidebar-section { padding: 10px 16px 2px; font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
-.session-item { padding: 7px 16px; font-size: 13px; color: var(--text-secondary);
-  cursor: pointer; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; transition: background 0.1s; }
+.session-item { padding: 4px 16px; font-size: 12px; color: var(--text-secondary);
+  cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; transition: background 0.1s; }
 .session-item:hover { background: var(--surface); }
 .session-item.active { color: var(--text-primary); font-weight: 500; }
+.session-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12px; }
+.session-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
 .sidebar-sessions { flex: 1; overflow-y: auto; }
 
 /* Overlay for mobile when sidebar is open */
@@ -145,8 +148,12 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
   .hamburger { display: flex; align-items: center; justify-content: center; }
   .chat-area { padding: 16px 20px; }
   .input-area {
+    position: sticky;
+    bottom: 0;
     padding: 12px 16px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--border); }
   .page { padding: 24px 20px; }
   .input-textarea { min-height: 60px; }
 }

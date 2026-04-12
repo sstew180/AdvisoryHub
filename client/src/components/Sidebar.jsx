@@ -8,9 +8,39 @@ const NAV = [
   { id: 'library', label: 'Library', icon: '📚' },
 ];
 
+function getDateGroup(dateStr) {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays <= 7) return 'This week';
+  if (diffDays <= 30) return 'This month';
+  return date.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+
+function formatTime(dateStr) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays <= 7) return date.toLocaleDateString('en-AU', { weekday: 'short' });
+  return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
+function groupSessions(sessions) {
+  const groups = {};
+  const order = [];
+  for (const s of sessions) {
+    const group = getDateGroup(s.created_at);
+    if (!groups[group]) { groups[group] = []; order.push(group); }
+    groups[group].push(s);
+  }
+  return order.map(g => ({ label: g, sessions: groups[g] }));
+}
+
 export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
-  const [favorites, setFavorites] = useState([]);
 
   useEffect(() => {
     if (!session) return;
@@ -18,22 +48,13 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .select('id, title, created_at')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => {
-        if (data) {
-          setFavorites(data.slice(0, 2));
-          setSessions(data.slice(2));
-        }
-      });
+      .limit(60)
+      .then(({ data }) => { if (data) setSessions(data); });
   }, [session, activeSessionId]);
 
   const handleNav = (id) => {
-    if (id === 'chat') {
-      setActiveSessionId(null);
-      setView('chat');
-    } else {
-      setView(id);
-    }
+    if (id === 'chat') { setActiveSessionId(null); setView('chat'); }
+    else setView(id);
     onClose && onClose();
   };
 
@@ -42,6 +63,8 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     setView('chat');
     onClose && onClose();
   };
+
+  const groups = groupSessions(sessions);
 
   return (
     <>
@@ -60,26 +83,24 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
           ))}
         </nav>
         <div className='sidebar-sessions'>
-          {favorites.length > 0 && <>
-            <div className='sidebar-section'>Favorites</div>
-            {favorites.map(s => (
-              <div key={s.id}
-                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                onClick={() => handleSession(s.id)}>
-                {s.title || 'New session'}
-              </div>
-            ))}
-          </>}
-          {sessions.length > 0 && <>
-            <div className='sidebar-section'>Recents</div>
-            {sessions.map(s => (
-              <div key={s.id}
-                className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                onClick={() => handleSession(s.id)}>
-                {s.title || 'New session'}
-              </div>
-            ))}
-          </>}
+          {groups.map(group => (
+            <div key={group.label}>
+              <div className='sidebar-section'>{group.label}</div>
+              {group.sessions.map(s => (
+                <div key={s.id}
+                  className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                  onClick={() => handleSession(s.id)}>
+                  <span className='session-title'>{s.title || 'New session'}</span>
+                  <span className='session-time'>{formatTime(s.created_at)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {sessions.length === 0 && (
+            <div style={{ padding: '16px', fontSize: 12, color: 'var(--text-muted)' }}>
+              No sessions yet
+            </div>
+          )}
         </div>
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
           <button className='btn btn-secondary' style={{ width: '100%', fontSize: 12 }}
