@@ -13,7 +13,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Fix iPhone viewport height
   useEffect(() => {
     const setVh = () => {
       document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
@@ -100,8 +99,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           userId: session.user.id, sessionId, messages: allMsgs
         }).catch(console.error);
       }
+      // Generate a proper title after the first exchange
       if (messages.length === 0) {
-        await supabase.from('sessions').update({ title: text.slice(0, 60) }).eq('id', sessionId);
+        axios.post(API + '/api/generate-title', {
+          sessionId,
+          userMessage: text,
+          assistantMessage: assistantText
+        }).catch(console.error);
       }
     } catch (err) { console.error(err); }
     setStreaming(false);
