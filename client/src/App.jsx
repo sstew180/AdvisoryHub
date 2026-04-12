@@ -26,7 +26,7 @@ export default function App() {
   if (!session) return <Auth />;
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <>
       <Sidebar
         view={view} setView={setView} session={session}
         activeSessionId={activeSessionId} setActiveSessionId={setActiveSessionId}
@@ -48,6 +48,6 @@ export default function App() {
         )}
         {view === 'library' && <LibraryPage session={session} />}
       </div>
-    </div>
+    </>
   );
 }
