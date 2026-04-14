@@ -56,6 +56,7 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
   white-space: nowrap; }
 .project-filter-pill:hover { border-color: var(--teal-line); color: var(--accent); }
 .project-filter-pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+.project-filter-pill-sub { padding-left: 6px; opacity: 0.85; }
 
 /* Overlay for mobile when sidebar is open */
 .sidebar-overlay { display: none; position: fixed; inset: 0;

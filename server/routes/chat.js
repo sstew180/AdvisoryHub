@@ -11,11 +11,16 @@ router.post('/', async (req, res) => {
     // 1. User profile
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
-    // 2. Project context
+    // 2. Project context -- if sub-project, also fetch parent
     let project = null;
+    let parentProject = null;
     if (projectId) {
       const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
       project = data;
+      if (project?.parent_id) {
+        const { data: parent } = await supabase.from('projects').select('*').eq('id', project.parent_id).single();
+        parentProject = parent;
+      }
     }
 
     // 3. Embed current query
@@ -77,7 +82,7 @@ router.post('/', async (req, res) => {
       orgDocs = data || [];
     }
 
-    // 10. Project documents (vector-matched)
+    // 10. Sub-project documents (vector-matched, most specific first)
     let projectDocs = [];
     if (projectId) {
       const { data } = await supabase.rpc('match_documents', {
@@ -86,12 +91,21 @@ router.post('/', async (req, res) => {
       projectDocs = data || [];
     }
 
+    // 11. Parent project documents (if sub-project active, bubble up)
+    let parentDocs = [];
+    if (parentProject) {
+      const { data } = await supabase.rpc('match_documents', {
+        query_embedding: queryEmbedding, match_project_id: parentProject.id, match_threshold: 0.7, match_count: 2
+      });
+      parentDocs = data || [];
+    }
+
     const isGuided = mode !== 'direct';
 
     // Debug log
     console.log('--- RAG context ---');
     console.log('Profile:', profile ? profile.role : 'none');
-    console.log('Project:', project ? project.name : 'none');
+    console.log('Project:', project ? (parentProject ? parentProject.name + ' > ' + project.name : project.name) : 'none');
     console.log('Memories:', memories ? memories.length : 0);
     console.log('Session summaries:', recentSessions ? recentSessions.length : 0);
     console.log('Library docs:', resolvedLibraryDocs.map(d => d.title));
@@ -99,11 +113,12 @@ router.post('/', async (req, res) => {
     console.log('Templates:', templateDocs.map(d => d.title));
     console.log('Org docs:', orgDocs.map(d => d.title));
     console.log('Project docs:', projectDocs.map(d => d.filename));
+    console.log('Parent docs:', parentDocs.map(d => d.filename));
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
-      profile, project, memories, recentSessions,
-      resolvedLibraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, isGuided
+      profile, project, parentProject, memories, recentSessions,
+      resolvedLibraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided
     );
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -126,7 +141,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, isGuided) {
+function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided) {
 
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -162,9 +177,18 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Project context
+  // Parent project context (if sub-project is active)
+  if (parentProject) {
+    p += '\n\n## Parent Project: ' + parentProject.name;
+    if (parentProject.description) p += '\n' + parentProject.description;
+    if (parentProject.objectives) p += '\nObjectives: ' + parentProject.objectives;
+    if (parentProject.custom_instructions) p += '\nInstructions: ' + parentProject.custom_instructions;
+  }
+
+  // Active project or sub-project context
   if (project) {
-    p += '\n\n## Active Project: ' + project.name;
+    const label = parentProject ? '## Active Sub-project: ' + project.name : '## Active Project: ' + project.name;
+    p += '\n\n' + label;
     if (project.description) p += '\n' + project.description;
     if (project.objectives) p += '\nObjectives: ' + project.objectives;
     if (project.custom_instructions) p += '\nProject instructions: ' + project.custom_instructions;
@@ -217,10 +241,19 @@ function buildSystemPrompt(profile, project, memories, recentSessions, libraryDo
     });
   }
 
-  // Project documents
+  // Sub-project documents (most specific)
   if (projectDocs && projectDocs.length > 0) {
-    p += '\n\n## Project Documents';
+    p += '\n\n## ' + (parentProject ? 'Sub-project Documents' : 'Project Documents');
     projectDocs.forEach(d => {
+      p += '\n\n### ' + d.filename;
+      p += '\n' + d.content.slice(0, 8000);
+    });
+  }
+
+  // Parent project documents (broader context)
+  if (parentDocs && parentDocs.length > 0) {
+    p += '\n\n## Parent Project Documents';
+    parentDocs.forEach(d => {
       p += '\n\n### ' + d.filename;
       p += '\n' + d.content.slice(0, 8000);
     });

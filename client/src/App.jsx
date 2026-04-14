@@ -26,6 +26,13 @@ export default function App() {
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading...</div>;
   if (!session) return <Auth />;
 
+  // Build breadcrumb label for active project
+  const projectLabel = activeProject
+    ? activeProject.parent_id
+      ? null // will be resolved in ChatPage via project data
+      : activeProject.name
+    : null;
+
   return (
     <>
       <Sidebar

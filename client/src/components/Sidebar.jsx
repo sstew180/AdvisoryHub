@@ -54,7 +54,7 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .then(({ data }) => { if (data) setSessions(data); });
 
     supabase.from('projects')
-      .select('id, name')
+      .select('id, name, parent_id')
       .eq('user_id', session.user.id)
       .order('name')
       .then(({ data }) => { if (data) setProjects(data); });
@@ -72,10 +72,17 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
+  // Build hierarchical project list for filter pills
+  const topLevel = projects.filter(p => !p.parent_id);
+  const subProjects = projects.filter(p => p.parent_id);
+
   const filteredSessions = sessions.filter(s => {
     if (projectFilter === 'all') return true;
     if (projectFilter === 'none') return !s.project_id;
-    return s.project_id === projectFilter;
+    // Match exact project or any sub-project of selected project
+    if (s.project_id === projectFilter) return true;
+    const sub = subProjects.find(sp => sp.id === s.project_id);
+    return sub?.parent_id === projectFilter;
   });
 
   const groups = groupSessions(filteredSessions);
@@ -107,13 +114,22 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
             onClick={() => setProjectFilter('none')}>
             No project
           </button>
-          {projects.map(p => (
-            <button
-              key={p.id}
-              className={`project-filter-pill ${projectFilter === p.id ? 'active' : ''}`}
-              onClick={() => setProjectFilter(p.id)}>
-              {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
-            </button>
+          {topLevel.map(p => (
+            <div key={p.id} style={{ display: 'contents' }}>
+              <button
+                className={`project-filter-pill ${projectFilter === p.id ? 'active' : ''}`}
+                onClick={() => setProjectFilter(p.id)}>
+                {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
+              </button>
+              {subProjects.filter(sp => sp.parent_id === p.id).map(sp => (
+                <button
+                  key={sp.id}
+                  className={`project-filter-pill project-filter-pill-sub ${projectFilter === sp.id ? 'active' : ''}`}
+                  onClick={() => setProjectFilter(sp.id)}>
+                  ↳ {sp.name.length > 15 ? sp.name.slice(0, 15) + '…' : sp.name}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
         <div className='sidebar-sessions'>
