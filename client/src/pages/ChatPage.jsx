@@ -38,6 +38,26 @@ const RULE_LABELS = {
   confirm_artefact: 'Confirm artefact',
 };
 
+const LENGTH_OPTIONS = [
+  { id: 'brief', label: 'Brief', instruction: 'Keep the response to 2-3 short paragraphs maximum.' },
+  { id: 'standard', label: 'Standard', instruction: 'Keep the response to roughly one page -- 4-6 paragraphs.' },
+  { id: 'detailed', label: 'Detailed', instruction: 'Provide a full, detailed response with as much depth as needed.' },
+];
+
+const FORMAT_OPTIONS = [
+  { id: 'prose', label: 'Prose', instruction: 'Write in flowing prose paragraphs. No bullet points or numbered lists.' },
+  { id: 'structured', label: 'Structured', instruction: 'Use clear headings and structured sections to organise the response.' },
+  { id: 'bullets', label: 'Bullets', instruction: 'Use bullet points or numbered lists as the primary format.' },
+  { id: 'table', label: 'Table', instruction: 'Present the information as a table where possible.' },
+];
+
+const DEPTH_OPTIONS = [
+  { id: 'summary', label: 'Summary', instruction: 'Provide a high-level summary only. Do not go into detail.' },
+  { id: 'analysis', label: 'Analysis', instruction: 'Provide analysis with reasoning, not just facts.' },
+  { id: 'full', label: 'Full + recommendations', instruction: 'Provide full analysis with specific recommendations and next steps.' },
+  { id: 'critical', label: 'Critical review', instruction: 'Provide full analysis plus an adversarial critique -- identify assumptions, gaps, and risks.' },
+];
+
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -46,17 +66,16 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [activeRules, setActiveRules] = useState([]);
   const [ruleOverrides, setRuleOverrides] = useState({});
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [formatControls, setFormatControls] = useState({ length: null, format: null, depth: null });
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const rulesPanelRef = useRef(null);
 
-  // Load profile rules on mount
   useEffect(() => {
     supabase.from('profiles').select('prompt_rules').eq('id', session.user.id).single()
       .then(({ data }) => { if (data) setActiveRules(data.prompt_rules || []); });
   }, [session]);
 
-  // Close rules panel on outside click
   useEffect(() => {
     const handler = (e) => {
       if (rulesOpen && rulesPanelRef.current && !rulesPanelRef.current.contains(e.target)) {
@@ -106,7 +125,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     return data.id;
   };
 
-  // Compute effective rules -- profile base + overrides applied
   const getEffectiveRules = () => {
     let effective = new Set(activeRules);
     for (const [id, state] of Object.entries(ruleOverrides)) {
@@ -122,11 +140,9 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       const next = { ...prev };
       const profileHas = activeRules.includes(id);
       if (profileHas) {
-        // Was on by profile -- toggle off or restore
         next[id] = isActive ? 'off' : 'on';
-        if (next[id] === 'on') delete next[id]; // restore to profile default
+        if (next[id] === 'on') delete next[id];
       } else {
-        // Was off by profile -- toggle on or restore
         if (next[id] === 'on') delete next[id];
         else next[id] = 'on';
       }
@@ -134,6 +150,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     });
   };
 
+  const toggleFormat = (type, id) => {
+    setFormatControls(prev => ({ ...prev, [type]: prev[type] === id ? null : id }));
+  };
+
+  const formatActiveCount = Object.values(formatControls).filter(Boolean).length;
   const overrideCount = Object.keys(ruleOverrides).length;
   const effectiveRules = getEffectiveRules();
 
@@ -150,9 +171,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     let assistantText = '';
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-    // Capture overrides for this send then reset them
     const overridesForThisSend = { ...ruleOverrides };
+    const formatForThisSend = { ...formatControls };
     setRuleOverrides({});
+    setFormatControls({ length: null, format: null, depth: null });
 
     try {
       const response = await fetch(API + '/api/chat', {
@@ -163,7 +185,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           projectId: activeProject?.id || null,
           messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
           mode,
-          ruleOverrides: overridesForThisSend
+          ruleOverrides: overridesForThisSend,
+          formatControls: formatForThisSend,
         })
       });
       const reader = response.body.getReader();
@@ -199,6 +222,16 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setStreaming(false);
   };
 
+  const OptionPill = ({ active, onClick, children }) => (
+    <button onClick={onClick} style={{
+      fontSize: 11, padding: '2px 8px', borderRadius: 10, cursor: 'pointer',
+      border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+      background: active ? 'rgba(0,145,164,0.08)' : 'transparent',
+      color: active ? 'var(--accent)' : 'var(--text-muted)',
+      fontWeight: active ? 600 : 400, transition: 'all 0.15s', whiteSpace: 'nowrap',
+    }}>{children}</button>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden',
       height: 'var(--real-vh, 100dvh)' }}>
@@ -215,10 +248,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
 
-        {/* Rules toggle button */}
         <div style={{ position: 'relative' }} ref={rulesPanelRef}>
-          <button
-            onClick={() => setRulesOpen(o => !o)}
+          <button onClick={() => setRulesOpen(o => !o)}
             style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--radius)',
               border: '1px solid ' + (overrideCount > 0 ? 'var(--accent)' : 'var(--border)'),
               background: overrideCount > 0 ? 'rgba(0,145,164,0.06)' : 'transparent',
@@ -293,6 +324,57 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       <div className='input-area'>
         <div className='input-area-inner'>
           <div className='input-box'>
+
+            {/* Format controls toolbar */}
+            <div style={{ display: 'flex', gap: 12, padding: '8px 14px 6px',
+              borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
+
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Length</span>
+                {LENGTH_OPTIONS.map(o => (
+                  <OptionPill key={o.id} active={formatControls.length === o.id}
+                    onClick={() => toggleFormat('length', o.id)}>
+                    {o.label}
+                  </OptionPill>
+                ))}
+              </div>
+
+              <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Format</span>
+                {FORMAT_OPTIONS.map(o => (
+                  <OptionPill key={o.id} active={formatControls.format === o.id}
+                    onClick={() => toggleFormat('format', o.id)}>
+                    {o.label}
+                  </OptionPill>
+                ))}
+              </div>
+
+              <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Depth</span>
+                {DEPTH_OPTIONS.map(o => (
+                  <OptionPill key={o.id} active={formatControls.depth === o.id}
+                    onClick={() => toggleFormat('depth', o.id)}>
+                    {o.label}
+                  </OptionPill>
+                ))}
+              </div>
+
+              {formatActiveCount > 0 && (
+                <button onClick={() => setFormatControls({ length: null, format: null, depth: null })}
+                  style={{ fontSize: 10, color: 'var(--text-muted)', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>
+                  Clear
+                </button>
+              )}
+            </div>
+
             <textarea
               ref={textareaRef}
               className='input-textarea'

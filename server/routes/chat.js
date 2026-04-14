@@ -38,19 +38,37 @@ const RULE_DEFINITIONS = {
   confirm_artefact: 'If the user asks for a document or structured output, confirm the document type and intended audience in one sentence before producing it.',
 };
 
+const LENGTH_INSTRUCTIONS = {
+  brief: 'Keep the response to 2-3 short paragraphs maximum.',
+  standard: 'Keep the response to roughly one page -- 4-6 paragraphs.',
+  detailed: 'Provide a full, detailed response with as much depth as needed.',
+};
+
+const FORMAT_INSTRUCTIONS = {
+  prose: 'Write in flowing prose paragraphs. No bullet points or numbered lists.',
+  structured: 'Use clear headings and structured sections to organise the response.',
+  bullets: 'Use bullet points or numbered lists as the primary format.',
+  table: 'Present the information as a table where possible.',
+};
+
+const DEPTH_INSTRUCTIONS = {
+  summary: 'Provide a high-level summary only. Do not go into detail.',
+  analysis: 'Provide analysis with reasoning, not just facts.',
+  full: 'Provide full analysis with specific recommendations and next steps.',
+  critical: 'Provide full analysis plus an adversarial critique -- identify assumptions, gaps, and risks.',
+};
+
 function buildRulesBlock(profileRules, projectRules, promptOverrides) {
   const profileActive = Array.isArray(profileRules) ? profileRules : [];
   const projectOverrides = Array.isArray(projectRules) ? projectRules : [];
   let active = new Set(profileActive);
 
-  // Apply project overrides -- id:on forces on, id:off forces off
   for (const rule of projectOverrides) {
     if (rule.endsWith(':on')) active.add(rule.replace(':on', ''));
     else if (rule.endsWith(':off')) active.delete(rule.replace(':off', ''));
     else active.add(rule);
   }
 
-  // Apply per-prompt overrides -- highest priority, resets after each send
   const overrides = promptOverrides && typeof promptOverrides === 'object' ? promptOverrides : {};
   for (const [id, state] of Object.entries(overrides)) {
     if (state === 'on') active.add(id);
@@ -66,6 +84,20 @@ function buildRulesBlock(profileRules, projectRules, promptOverrides) {
   return '\n\nWRITING RULES (apply to every response):\n' + instructions;
 }
 
+function buildFormatBlock(formatControls) {
+  if (!formatControls) return '';
+  const parts = [];
+  if (formatControls.length && LENGTH_INSTRUCTIONS[formatControls.length])
+    parts.push(LENGTH_INSTRUCTIONS[formatControls.length]);
+  if (formatControls.format && FORMAT_INSTRUCTIONS[formatControls.format])
+    parts.push(FORMAT_INSTRUCTIONS[formatControls.format]);
+  if (formatControls.depth && DEPTH_INSTRUCTIONS[formatControls.depth])
+    parts.push(DEPTH_INSTRUCTIONS[formatControls.depth]);
+  if (parts.length === 0) return '';
+  return '\n\nFORMAT INSTRUCTION (applies to this response only):\n' +
+    parts.map(p => '- ' + p).join('\n');
+}
+
 function mergeLibraryDocs(globalDocs, projectDocs) {
   if (!projectDocs || projectDocs.length === 0) return globalDocs || [];
   const projectTitles = new Set(projectDocs.map(d => d.title));
@@ -74,12 +106,10 @@ function mergeLibraryDocs(globalDocs, projectDocs) {
 }
 
 router.post('/', async (req, res) => {
-  const { userId, sessionId, projectId, messages, mode, ruleOverrides } = req.body;
+  const { userId, sessionId, projectId, messages, mode, ruleOverrides, formatControls } = req.body;
   try {
-    // 1. User profile
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
-    // 2. Project context -- if sub-project, also fetch parent
     let project = null;
     let parentProject = null;
     if (projectId) {
@@ -91,16 +121,13 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 3. Embed current query
     const userQuery = messages[messages.length - 1].content;
     const queryEmbedding = await embed(userQuery);
 
-    // 4. Session memories and pinned notes
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding, match_user_id: userId, match_threshold: 0.7, match_count: 5
     });
 
-    // 5. Recent session summaries
     const { data: recentSessions } = await supabase
       .from('sessions')
       .select('id, title, summary, created_at')
@@ -109,7 +136,6 @@ router.post('/', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(5);
 
-    // 6. Global library docs -- vector matched, exclude always-injected categories
     const { data: allLibraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding, match_threshold: 0.7, match_count: 8
     });
@@ -117,7 +143,6 @@ router.post('/', async (req, res) => {
       d => !['Skills', 'Templates', 'Organisation'].includes(d.category)
     );
 
-    // 7. Project-scoped library docs (all categories)
     let projectLibrarySkills = [];
     let projectLibraryTemplates = [];
     let projectLibraryOrg = [];
@@ -145,7 +170,6 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 8. Global skills
     let globalSkillDocs = [];
     if (mode !== 'direct') {
       const { data } = await supabase.from('library_documents').select('id, title, content')
@@ -153,7 +177,6 @@ router.post('/', async (req, res) => {
       globalSkillDocs = data || [];
     }
 
-    // 9. Global templates
     let globalTemplateDocs = [];
     if (mode !== 'direct') {
       const { data } = await supabase.from('library_documents').select('id, title, content')
@@ -161,7 +184,6 @@ router.post('/', async (req, res) => {
       globalTemplateDocs = data || [];
     }
 
-    // 10. Global organisation docs
     let globalOrgDocs = [];
     if (mode !== 'direct') {
       const { data } = await supabase.from('library_documents').select('id, title, content')
@@ -169,13 +191,11 @@ router.post('/', async (req, res) => {
       globalOrgDocs = data || [];
     }
 
-    // Merge -- project-scoped takes priority over global on same title
     const skillDocs = mergeLibraryDocs(globalSkillDocs, projectLibrarySkills);
     const templateDocs = mergeLibraryDocs(globalTemplateDocs, projectLibraryTemplates);
     const orgDocs = mergeLibraryDocs(globalOrgDocs, projectLibraryOrg);
     const resolvedLibraryDocs = mergeLibraryDocs(globalLibraryDocs, projectLibraryFrameworks);
 
-    // 11. Sub-project documents
     let projectDocs = [];
     if (projectId) {
       const { data } = await supabase.rpc('match_documents', {
@@ -184,7 +204,6 @@ router.post('/', async (req, res) => {
       projectDocs = data || [];
     }
 
-    // 12. Parent project documents
     let parentDocs = [];
     if (parentProject) {
       const { data } = await supabase.rpc('match_documents', {
@@ -212,12 +231,14 @@ router.post('/', async (req, res) => {
     console.log('Parent docs:', parentDocs.map(d => d.filename));
     console.log('Active rules:', [...new Set([...profileRules, ...mergedProjectRules])]);
     console.log('Rule overrides:', ruleOverrides || {});
+    console.log('Format controls:', formatControls || {});
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
       profile, project, parentProject, memories, recentSessions,
       resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
-      projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules, ruleOverrides
+      projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules,
+      ruleOverrides, formatControls
     );
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -240,7 +261,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules, promptOverrides) {
+function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
 
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -256,6 +277,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     'document verbatim -- use it to shape your response.';
 
   p += buildRulesBlock(profileRules, projectRules, promptOverrides);
+  p += buildFormatBlock(formatControls);
 
   if (profile) {
     p += '\n\n## User Profile';
