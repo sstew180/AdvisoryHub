@@ -9,6 +9,10 @@ const RULES = [
       { id: 'movement_verbs_evidence', label: 'Movement verbs require evidence', desc: 'Words like "shifted", "evolved", "accelerated" must cite what specifically changed.' },
       { id: 'traceable_claims', label: 'Every claim must be traceable', desc: 'Major claims must link to a document, metric, or meeting. Otherwise label as commentary.' },
       { id: 'show_sequence', label: 'Show sequence not summary', desc: 'Do not compress cause and effect. Show steps in order.' },
+      { id: 'no_rhetorical_contrasts', label: 'No rhetorical contrasts', desc: '"Not X but Y" constructions sound polished but substitute structure for substance. Ban them.' },
+{ id: 'no_three_part_lists', label: 'No three-part rhetorical lists', desc: 'Lists like "clarity, consistency, and commitment" must each be tied to a measurable action.' },
+{ id: 'metric_per_paragraph', label: 'One metric per paragraph', desc: 'Analytical responses must include at least one specific figure or documented fact per paragraph.' },
+
     ]
   },
   {
@@ -20,6 +24,9 @@ const RULES = [
       { id: 'plain_english', label: 'Plain English', desc: 'Avoid jargon unless it is the precise correct term.' },
       { id: 'active_voice', label: 'Active voice', desc: 'Avoid passive constructions where the actor is unclear.' },
       { id: 'short_sentences', label: 'Short sentences', desc: 'Keep sentences under 20 words where possible.' },
+      { id: 'no_nominalisation', label: 'No nominalisation', desc: 'Write "we assessed" not "an assessment was conducted". Use verbs not noun forms.' },
+{ id: 'no_hedging', label: 'No excessive hedging', desc: 'Avoid "it could be argued", "one might suggest". State positions directly or flag uncertainty explicitly.' },
+
     ]
   },
   {
@@ -39,6 +46,10 @@ const RULES = [
       { id: 'lead_with_answer', label: 'Lead with the answer', desc: 'State recommendation or conclusion first. Do not bury it after background.' },
       { id: 'no_bullets_default', label: 'No bullet points by default', desc: 'Use prose paragraphs unless the user explicitly asks for a list.' },
       { id: 'end_operational', label: 'End with operational detail', desc: 'End sections with a concrete next step or detail, not a rhetorical closure.' },
+    { id: 'no_preamble', label: 'No preamble', desc: 'Do not restate the question or explain what you are about to do. Start with the substance.' },
+{ id: 'no_summary_ending', label: 'No summary endings', desc: 'Do not end with a paragraph that repeats what was just said. End with a next step or action.' },
+{ id: 'confirm_artefact', label: 'Confirm document type before producing', desc: 'When producing a structured document, confirm the type and audience in one sentence first.' },
+
     ]
   },
 ];
@@ -47,7 +58,13 @@ const PRESETS = {
   none: [],
   base: ['no_em_dashes', 'no_slogans', 'no_buzzwords', 'plain_english', 'lead_with_answer', 'no_bullets_default'],
   strict: ['no_abstract_concepts', 'movement_verbs_evidence', 'traceable_claims', 'no_em_dashes', 'no_slogans', 'no_buzzwords', 'plain_english', 'active_voice', 'adversarial_review', 'expose_assumptions', 'no_flattery', 'prove_it', 'lead_with_answer', 'end_operational'],
-  qld_gov: ['no_em_dashes', 'no_slogans', 'no_buzzwords', 'plain_english', 'lead_with_answer', 'no_bullets_default', 'traceable_claims', 'prove_it', 'no_flattery'],
+  qld_gov: ['no_em_dashes', 'no_slogans', 'no_buzzwords', 'plain_english', 'lead_with_answer',
+  'no_bullets_default', 'traceable_claims', 'prove_it', 'no_flattery', 'cite_qao',
+  'flag_legal_boundary', 'no_preamble'],
+
+advisory: ['no_em_dashes', 'no_buzzwords', 'plain_english', 'active_voice', 'lead_with_answer',
+  'no_preamble', 'no_summary_ending', 'no_flattery', 'prove_it', 'flag_legal_boundary',
+  'no_rhetorical_contrasts', 'no_hedging'],
 };
 
 export default function SettingsPage({ session, onMenuOpen }) {

@@ -5,13 +5,15 @@ const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Rule definitions -- each rule has an id and the instruction injected into the system prompt
 const RULE_DEFINITIONS = {
   // Grounding
   no_abstract_concepts: 'Do not introduce any concept without anchoring it to a specific data point, document, or recorded example. If a paragraph reads like a textbook definition, rewrite it.',
   movement_verbs_evidence: 'If you use words such as "shifted", "evolved", "accelerated", or "embedded", you must immediately cite what specifically changed and where it is recorded.',
   traceable_claims: 'Every major claim must be traceable to a document, metric, or meeting. If it cannot be traced, label it as commentary.',
   show_sequence: 'Do not compress cause and effect into a single sentence. Show the steps in order. Replace "this led to" with documented sequence.',
+  no_rhetorical_contrasts: 'Do not use balanced rhetorical contrast constructions such as "not X but Y" or "less about X and more about Y". These patterns sound polished but substitute structure for substance.',
+  no_three_part_lists: 'Do not use three-part rhetorical lists (e.g. "clarity, consistency, and commitment") unless each item is tied to a measurable action or specific evidence.',
+  metric_per_paragraph: 'In analytical responses, include at least one specific metric, figure, or documented fact per paragraph. Do not allow paragraphs that are entirely interpretive.',
   // Tone and style
   no_em_dashes: 'Do not use em dashes. Use commas, colons, or restructure the sentence.',
   no_slogans: 'Do not end paragraphs or sections with motivational or slogan-like language. End with operational detail instead.',
@@ -19,6 +21,8 @@ const RULE_DEFINITIONS = {
   plain_english: 'Use plain English throughout. Avoid jargon unless it is the precise correct term.',
   active_voice: 'Use active voice. Avoid passive constructions where the actor is unclear.',
   short_sentences: 'Keep sentences under 20 words where possible.',
+  no_nominalisation: 'Avoid nominalisation -- turning verbs into nouns. Write "we assessed" not "an assessment was conducted". Write "the committee decided" not "a decision was made by the committee".',
+  no_hedging: 'Avoid excessive hedging language such as "it could be argued", "one might suggest", "it is possible that". State positions directly or flag uncertainty explicitly.',
   // Analytical rigour
   adversarial_review: 'After drafting, internally critique the response for unrealistic assumptions, unsupported claims, and logical gaps. Surface these to the user.',
   expose_assumptions: 'Before expanding any plan or argument, list the assumptions embedded in it and note what would happen if each proved false.',
@@ -26,26 +30,28 @@ const RULE_DEFINITIONS = {
   prove_it: 'Do not allow unsupported major claims. If evidence is absent, label it explicitly as "no supporting data currently available".',
   model_failure_modes: 'For every proposed action or recommendation, include at least one way it could fail and the earliest warning signal.',
   no_motive_speculation: 'Describe decisions and actions only. Do not speculate about what people were thinking or feeling.',
+  cite_qao: 'When making recommendations about risk management, internal audit, or governance, cite the relevant QAO Better Practice Guide or Queensland Audit Office guidance where it applies.',
+  flag_legal_boundary: 'If a response touches on matters that may require legal, insurance, or specialist professional advice, flag this explicitly at the end of the response.',
+  multi_role_check: 'For high-stakes recommendations, consider the perspective of at least two stakeholders -- e.g. how would the CFO and the external auditor each view this recommendation.',
   // Output format
   lead_with_answer: 'State the recommendation or conclusion first. Do not bury it after background.',
   no_bullets_default: 'Use prose paragraphs by default. Only use bullet points if the user explicitly asks for a list.',
   end_operational: 'End sections with a concrete operational detail, not a rhetorical closure or summary sentence.',
+  no_preamble: 'Do not begin responses with preamble that restates the question or explains what you are about to do. Start directly with the substance.',
+  no_summary_ending: 'Do not end responses with a summary paragraph that repeats what was just said. End with a next step, a question, or a specific action.',
+  confirm_artefact: 'If the user asks for a document or structured output, confirm the document type and intended audience in one sentence before producing it.',
 };
 
 function buildRulesBlock(profileRules, projectRules) {
   const profileActive = Array.isArray(profileRules) ? profileRules : [];
   const projectActive = Array.isArray(projectRules) ? projectRules : [];
-
-  // Merge -- project rules extend profile rules, duplicates deduplicated
   const allActive = [...new Set([...profileActive, ...projectActive])];
   if (allActive.length === 0) return '';
-
   const instructions = allActive
     .map(id => RULE_DEFINITIONS[id])
     .filter(Boolean)
     .map(rule => '- ' + rule)
     .join('\n');
-
   return '\n\nWRITING RULES (apply to every response):\n' + instructions;
 }
 
@@ -137,7 +143,7 @@ router.post('/', async (req, res) => {
 
     const isGuided = mode !== 'direct';
 
-    // Build active rules -- profile base, project extends
+    // Build active rules -- profile base, project extends, parent project extends
     const profileRules = profile?.prompt_rules || [];
     const projectRules = project?.prompt_rules || [];
     const parentRules = parentProject?.prompt_rules || [];
