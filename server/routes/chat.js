@@ -44,10 +44,20 @@ const RULE_DEFINITIONS = {
 
 function buildRulesBlock(profileRules, projectRules) {
   const profileActive = Array.isArray(profileRules) ? profileRules : [];
-  const projectActive = Array.isArray(projectRules) ? projectRules : [];
-  const allActive = [...new Set([...profileActive, ...projectActive])];
-  if (allActive.length === 0) return '';
-  const instructions = allActive
+  const projectOverrides = Array.isArray(projectRules) ? projectRules : [];
+
+  // Start with profile rules
+  let active = new Set(profileActive);
+
+  // Apply project overrides -- id:on forces on, id:off forces off, bare id also forces on
+  for (const rule of projectOverrides) {
+    if (rule.endsWith(':on')) active.add(rule.replace(':on', ''));
+    else if (rule.endsWith(':off')) active.delete(rule.replace(':off', ''));
+    else active.add(rule);
+  }
+
+  if (active.size === 0) return '';
+  const instructions = [...active]
     .map(id => RULE_DEFINITIONS[id])
     .filter(Boolean)
     .map(rule => '- ' + rule)
