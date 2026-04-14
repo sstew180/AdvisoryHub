@@ -6,6 +6,7 @@ import ProfilePage from './pages/ProfilePage';
 import ChatPage from './pages/ChatPage';
 import ProjectsPage from './pages/ProjectsPage';
 import LibraryPage from './pages/LibraryPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -54,6 +55,9 @@ export default function App() {
         )}
         {view === 'library' && (
           <LibraryPage session={session} onMenuOpen={() => setSidebarOpen(true)} />
+        )}
+        {view === 'settings' && (
+          <SettingsPage session={session} onMenuOpen={() => setSidebarOpen(true)} />
         )}
       </div>
     </>

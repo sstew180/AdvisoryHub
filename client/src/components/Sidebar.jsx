@@ -6,6 +6,7 @@ const NAV = [
   { id: 'profile', label: 'Profile', icon: '👤' },
   { id: 'projects', label: 'Projects', icon: '📁' },
   { id: 'library', label: 'Library', icon: '📚' },
+  { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
 function getDateGroup(dateStr) {
@@ -72,14 +73,12 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
-  // Build hierarchical project list for filter pills
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
 
   const filteredSessions = sessions.filter(s => {
     if (projectFilter === 'all') return true;
     if (projectFilter === 'none') return !s.project_id;
-    // Match exact project or any sub-project of selected project
     if (s.project_id === projectFilter) return true;
     const sub = subProjects.find(sp => sp.id === s.project_id);
     return sub?.parent_id === projectFilter;
