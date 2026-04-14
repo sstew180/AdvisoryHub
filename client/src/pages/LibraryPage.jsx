@@ -4,10 +4,11 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
-const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '' };
+const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' };
 
 export default function LibraryPage({ session, onMenuOpen }) {
   const [docs, setDocs] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -28,13 +29,15 @@ export default function LibraryPage({ session, onMenuOpen }) {
     loadDocs();
     supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
       .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
+    supabase.from('projects').select('id, name').eq('user_id', session.user.id).order('name')
+      .then(({ data }) => { if (data) setProjects(data); });
   }, []);
 
   const upload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setUploading(true);
     const fd = new FormData();
-    Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+    Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
     fd.append('file', file);
     try {
       await axios.post(API + '/api/library/upload', fd);
@@ -99,7 +102,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
             )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-            Skills, Templates, and Organisation documents are injected into every Guided mode response automatically.
+            Skills, Templates, and Organisation documents are injected into every Guided mode response automatically. Scoping to a project limits injection to that project only.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div className='form-group' style={{ margin: 0 }}>
@@ -123,6 +126,16 @@ export default function LibraryPage({ session, onMenuOpen }) {
               <label className='form-label'>Source URL (optional)</label>
               <input className='form-input' value={form.sourceUrl}
                 onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
+            </div>
+            <div className='form-group' style={{ margin: 0, gridColumn: '1 / -1' }}>
+              <label className='form-label'>Scope to project (optional)</label>
+              <select className='form-select' value={form.projectId}
+                onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
+                <option value=''>Global -- available to all sessions</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div className='form-group'>
@@ -149,6 +162,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
       {!loading && !error && filtered.map(d => {
         const badge = categoryBadgeStyle(d.category);
         const isAutoInjected = ['Skills', 'Templates', 'Organisation'].includes(d.category);
+        const projectName = d.project_id ? projects.find(p => p.id === d.project_id)?.name : null;
         return (
           <div key={d.id} className='card'>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -159,10 +173,16 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     background: badge.bg, color: badge.color, fontWeight: 500 }}>
                     {d.category}
                   </span>
-                  {isAutoInjected && (
+                  {isAutoInjected && !projectName && (
                     <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
                       background: '#e8f4f8', color: '#0091a4', fontWeight: 500 }}>
                       Always on
+                    </span>
+                  )}
+                  {projectName && (
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+                      background: '#f0f0ec', color: '#6b6b6b', fontWeight: 500 }}>
+                      {projectName}
                     </span>
                   )}
                 </div>

@@ -5,6 +5,8 @@ import axios from 'axios';
 const API = import.meta.env.VITE_API_URL;
 const blank = { name: '', description: '', objectives: '', custom_instructions: '', high_scrutiny: false, profile_override: false, parent_id: null, prompt_rules: [] };
 
+const CATS = ['Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
+
 const RULES = [
   {
     category: 'Grounding',
@@ -154,6 +156,106 @@ function ProjectRulesTab({ editing, setEditing }) {
   );
 }
 
+function ProjectLibraryTab({ projectId }) {
+  const [libDocs, setLibDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [form, setForm] = useState({ title: '', category: 'Skills', jurisdiction: 'Queensland', description: '', sourceUrl: '' });
+
+  const load = () => {
+    axios.get(API + '/api/library?projectId=' + projectId)
+      .then(r => setLibDocs(r.data))
+      .catch(() => setLibDocs([]));
+  };
+
+  useEffect(() => { load(); }, [projectId]);
+
+  const upload = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+    fd.append('projectId', projectId);
+    fd.append('file', file);
+    try {
+      await axios.post(API + '/api/library/upload', fd);
+      load();
+      setForm(f => ({ ...f, title: '', description: '', sourceUrl: '' }));
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 2000);
+    } catch { }
+    setUploading(false);
+    e.target.value = '';
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+        Project-scoped library documents are only injected when this project is active. Use this tab to add project-specific skills, templates, or reference documents.
+      </div>
+
+      <div className='card' style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>Upload project document</div>
+          {uploadSuccess && <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Uploaded</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>Title</label>
+            <input className='form-input' value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+          </div>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>Category</label>
+            <select className='form-select' value={form.category}
+              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              {CATS.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>Jurisdiction</label>
+            <input className='form-input' value={form.jurisdiction}
+              onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
+          </div>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>Source URL (optional)</label>
+            <input className='form-input' value={form.sourceUrl}
+              onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
+          </div>
+        </div>
+        <div className='form-group'>
+          <label className='form-label'>Description</label>
+          <input className='form-input' value={form.description}
+            onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+        </div>
+        <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
+          {uploading ? 'Uploading...' : 'Choose file and upload'}
+          <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
+        </label>
+      </div>
+
+      {libDocs.length === 0 && (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No project-scoped library documents yet.</p>
+      )}
+      {libDocs.map(d => (
+        <div key={d.id} className='card'>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+            <div className='card-title' style={{ margin: 0 }}>{d.title}</div>
+            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+              background: 'var(--surface)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              {d.category}
+            </span>
+          </div>
+          <div className='card-meta'>{d.jurisdiction}</div>
+          {d.description && (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{d.description}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ProjectsPage({ session, activeProject, setActiveProject, setView, onMenuOpen }) {
   const [projects, setProjects] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -215,7 +317,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     const tabs = [
       { id: 'details', label: 'Details' },
       { id: 'rules', label: 'Writing Rules' },
-      ...(editing.id ? [{ id: 'documents', label: 'Documents' }] : []),
+      ...(editing.id ? [
+        { id: 'documents', label: 'Documents' },
+        { id: 'library', label: 'Library' },
+      ] : []),
     ];
 
     return (
@@ -232,8 +337,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
           <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
         </div>
 
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)',
-          paddingBottom: 0 }}>
+        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ padding: '8px 16px', fontSize: 13, border: 'none', background: 'transparent',
@@ -318,6 +422,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               ))}
               {docs.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded yet.</p>}
             </>
+          )}
+
+          {activeTab === 'library' && editing.id && (
+            <ProjectLibraryTab projectId={editing.id} />
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
