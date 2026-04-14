@@ -5,13 +5,67 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 
+const RULE_LABELS = {
+  no_abstract_concepts: 'No abstract concepts',
+  movement_verbs_evidence: 'Movement verbs need evidence',
+  traceable_claims: 'Traceable claims',
+  show_sequence: 'Show sequence',
+  no_rhetorical_contrasts: 'No rhetorical contrasts',
+  no_three_part_lists: 'No three-part lists',
+  metric_per_paragraph: 'One metric per paragraph',
+  no_em_dashes: 'No em dashes',
+  no_slogans: 'No slogan endings',
+  no_buzzwords: 'No buzzwords',
+  plain_english: 'Plain English',
+  active_voice: 'Active voice',
+  short_sentences: 'Short sentences',
+  no_nominalisation: 'No nominalisation',
+  no_hedging: 'No hedging',
+  adversarial_review: 'Adversarial review',
+  expose_assumptions: 'Expose assumptions',
+  no_flattery: 'No flattery',
+  prove_it: 'Prove it',
+  model_failure_modes: 'Model failure modes',
+  no_motive_speculation: 'No motive speculation',
+  cite_qao: 'Cite QAO',
+  flag_legal_boundary: 'Flag legal boundary',
+  multi_role_check: 'Multi-role check',
+  lead_with_answer: 'Lead with answer',
+  no_bullets_default: 'No bullets',
+  end_operational: 'End operational',
+  no_preamble: 'No preamble',
+  no_summary_ending: 'No summary ending',
+  confirm_artefact: 'Confirm artefact',
+};
+
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [mode, setMode] = useState('guided');
+  const [activeRules, setActiveRules] = useState([]);
+  const [ruleOverrides, setRuleOverrides] = useState({});
+  const [rulesOpen, setRulesOpen] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  const rulesPanelRef = useRef(null);
+
+  // Load profile rules on mount
+  useEffect(() => {
+    supabase.from('profiles').select('prompt_rules').eq('id', session.user.id).single()
+      .then(({ data }) => { if (data) setActiveRules(data.prompt_rules || []); });
+  }, [session]);
+
+  // Close rules panel on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (rulesOpen && rulesPanelRef.current && !rulesPanelRef.current.contains(e.target)) {
+        setRulesOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [rulesOpen]);
 
   useEffect(() => {
     const setVh = () => {
@@ -52,6 +106,37 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     return data.id;
   };
 
+  // Compute effective rules -- profile base + overrides applied
+  const getEffectiveRules = () => {
+    let effective = new Set(activeRules);
+    for (const [id, state] of Object.entries(ruleOverrides)) {
+      if (state === 'on') effective.add(id);
+      else if (state === 'off') effective.delete(id);
+    }
+    return [...effective];
+  };
+
+  const toggleOverride = (id) => {
+    const isActive = getEffectiveRules().includes(id);
+    setRuleOverrides(prev => {
+      const next = { ...prev };
+      const profileHas = activeRules.includes(id);
+      if (profileHas) {
+        // Was on by profile -- toggle off or restore
+        next[id] = isActive ? 'off' : 'on';
+        if (next[id] === 'on') delete next[id]; // restore to profile default
+      } else {
+        // Was off by profile -- toggle on or restore
+        if (next[id] === 'on') delete next[id];
+        else next[id] = 'on';
+      }
+      return next;
+    });
+  };
+
+  const overrideCount = Object.keys(ruleOverrides).length;
+  const effectiveRules = getEffectiveRules();
+
   const send = async () => {
     if (!input.trim() || streaming) return;
     const text = input.trim();
@@ -64,6 +149,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setStreaming(true);
     let assistantText = '';
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+    // Capture overrides for this send then reset them
+    const overridesForThisSend = { ...ruleOverrides };
+    setRuleOverrides({});
+
     try {
       const response = await fetch(API + '/api/chat', {
         method: 'POST',
@@ -72,7 +162,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           userId: session.user.id, sessionId,
           projectId: activeProject?.id || null,
           messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-          mode
+          mode,
+          ruleOverrides: overridesForThisSend
         })
       });
       const reader = response.body.getReader();
@@ -99,12 +190,9 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           userId: session.user.id, sessionId, messages: allMsgs
         }).catch(console.error);
       }
-      // Generate a proper title after the first exchange
       if (messages.length === 0) {
         axios.post(API + '/api/generate-title', {
-          sessionId,
-          userMessage: text,
-          assistantMessage: assistantText
+          sessionId, userMessage: text, assistantMessage: assistantText
         }).catch(console.error);
       }
     } catch (err) { console.error(err); }
@@ -126,8 +214,68 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
+
+        {/* Rules toggle button */}
+        <div style={{ position: 'relative' }} ref={rulesPanelRef}>
+          <button
+            onClick={() => setRulesOpen(o => !o)}
+            style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--radius)',
+              border: '1px solid ' + (overrideCount > 0 ? 'var(--accent)' : 'var(--border)'),
+              background: overrideCount > 0 ? 'rgba(0,145,164,0.06)' : 'transparent',
+              color: overrideCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+            Rules
+            {overrideCount > 0 && (
+              <span style={{ fontSize: 10, background: 'var(--accent)', color: 'white',
+                padding: '0 5px', borderRadius: 8, fontWeight: 600 }}>
+                {overrideCount}
+              </span>
+            )}
+          </button>
+
+          {rulesOpen && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 100,
+              background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.1)', padding: 12, width: 280 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Rules for next response
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Overrides reset after each send. Profile and project rules apply by default.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
+                {Object.entries(RULE_LABELS).map(([id, label]) => {
+                  const isEffective = effectiveRules.includes(id);
+                  const isOverridden = ruleOverrides[id] !== undefined;
+                  return (
+                    <button key={id} onClick={() => toggleOverride(id)}
+                      style={{ fontSize: 11, padding: '3px 9px', borderRadius: 12, cursor: 'pointer',
+                        border: '1px solid ' + (isEffective ? 'var(--accent)' : 'var(--border)'),
+                        background: isEffective ? 'rgba(0,145,164,0.08)' : 'transparent',
+                        color: isEffective ? 'var(--accent)' : 'var(--text-muted)',
+                        fontWeight: isOverridden ? 600 : 400,
+                        textDecoration: isOverridden && !isEffective ? 'line-through' : 'none',
+                        transition: 'all 0.15s' }}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {overrideCount > 0 && (
+                <button onClick={() => setRuleOverrides({})}
+                  style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: 0 }}>
+                  Clear overrides
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {activeProject && <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>}
       </div>
+
       <div className='chat-area'>
         {messages.length === 0 && (
           <div style={{ color: 'var(--text-muted)', paddingTop: 40, textAlign: 'center' }}>
@@ -141,6 +289,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         ))}
         <div ref={bottomRef} />
       </div>
+
       <div className='input-area'>
         <div className='input-area-inner'>
           <div className='input-box'>
