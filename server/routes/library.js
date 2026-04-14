@@ -25,18 +25,27 @@ async function extractPdfText(buffer) {
   return text;
 }
 
+// List library documents -- optionally filter by project_id
 router.get('/', async (req, res) => {
-  console.log('Library route hit');
-  const { data, error } = await supabase.from('library_documents')
-    .select('id, title, category, domain, jurisdiction, description, source_url, default_enabled')
+  const { projectId } = req.query;
+  let query = supabase.from('library_documents')
+    .select('id, title, category, domain, jurisdiction, description, source_url, default_enabled, project_id')
     .order('category');
-  console.log('Library data:', data?.length, 'error:', error);
+
+  if (projectId) {
+    query = query.eq('project_id', projectId);
+  } else {
+    query = query.is('project_id', null);
+  }
+
+  const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
+// Upload library document -- optional projectId scopes it to a project
 router.post('/upload', upload.single('file'), async (req, res) => {
-  const { title, category, domain, jurisdiction, description, sourceUrl } = req.body;
+  const { title, category, domain, jurisdiction, description, sourceUrl, projectId } = req.body;
   const file = req.file;
   try {
     let content = '';
@@ -51,7 +60,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const embedding = await embed(content);
     const { data, error } = await supabase.from('library_documents').insert({
       title, category, domain, jurisdiction, description,
-      content: content.slice(0, 50000), source_url: sourceUrl, embedding
+      content: content.slice(0, 50000),
+      source_url: sourceUrl,
+      project_id: projectId || null,
+      embedding,
     }).select().single();
     if (error) throw error;
     res.json(data);
