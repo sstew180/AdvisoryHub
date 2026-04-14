@@ -5,6 +5,50 @@ const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Rule definitions -- each rule has an id and the instruction injected into the system prompt
+const RULE_DEFINITIONS = {
+  // Grounding
+  no_abstract_concepts: 'Do not introduce any concept without anchoring it to a specific data point, document, or recorded example. If a paragraph reads like a textbook definition, rewrite it.',
+  movement_verbs_evidence: 'If you use words such as "shifted", "evolved", "accelerated", or "embedded", you must immediately cite what specifically changed and where it is recorded.',
+  traceable_claims: 'Every major claim must be traceable to a document, metric, or meeting. If it cannot be traced, label it as commentary.',
+  show_sequence: 'Do not compress cause and effect into a single sentence. Show the steps in order. Replace "this led to" with documented sequence.',
+  // Tone and style
+  no_em_dashes: 'Do not use em dashes. Use commas, colons, or restructure the sentence.',
+  no_slogans: 'Do not end paragraphs or sections with motivational or slogan-like language. End with operational detail instead.',
+  no_buzzwords: 'Do not use the following words: leverage, optimise, unlock, transformative, holistic, ecosystem, synergy, embed, accelerate. Replace with specific actions or numbers.',
+  plain_english: 'Use plain English throughout. Avoid jargon unless it is the precise correct term.',
+  active_voice: 'Use active voice. Avoid passive constructions where the actor is unclear.',
+  short_sentences: 'Keep sentences under 20 words where possible.',
+  // Analytical rigour
+  adversarial_review: 'After drafting, internally critique the response for unrealistic assumptions, unsupported claims, and logical gaps. Surface these to the user.',
+  expose_assumptions: 'Before expanding any plan or argument, list the assumptions embedded in it and note what would happen if each proved false.',
+  no_flattery: 'Do not include conversational praise or validation. No "that\'s a great question", "you\'re absolutely right", or similar phrases. Maintain analytical neutrality.',
+  prove_it: 'Do not allow unsupported major claims. If evidence is absent, label it explicitly as "no supporting data currently available".',
+  model_failure_modes: 'For every proposed action or recommendation, include at least one way it could fail and the earliest warning signal.',
+  no_motive_speculation: 'Describe decisions and actions only. Do not speculate about what people were thinking or feeling.',
+  // Output format
+  lead_with_answer: 'State the recommendation or conclusion first. Do not bury it after background.',
+  no_bullets_default: 'Use prose paragraphs by default. Only use bullet points if the user explicitly asks for a list.',
+  end_operational: 'End sections with a concrete operational detail, not a rhetorical closure or summary sentence.',
+};
+
+function buildRulesBlock(profileRules, projectRules) {
+  const profileActive = Array.isArray(profileRules) ? profileRules : [];
+  const projectActive = Array.isArray(projectRules) ? projectRules : [];
+
+  // Merge -- project rules extend profile rules, duplicates deduplicated
+  const allActive = [...new Set([...profileActive, ...projectActive])];
+  if (allActive.length === 0) return '';
+
+  const instructions = allActive
+    .map(id => RULE_DEFINITIONS[id])
+    .filter(Boolean)
+    .map(rule => '- ' + rule)
+    .join('\n');
+
+  return '\n\nWRITING RULES (apply to every response):\n' + instructions;
+}
+
 router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode } = req.body;
   try {
@@ -52,37 +96,28 @@ router.post('/', async (req, res) => {
     // 7. Skills -- always inject all in Guided mode
     let skillDocs = [];
     if (mode !== 'direct') {
-      const { data } = await supabase
-        .from('library_documents')
-        .select('id, title, content')
-        .eq('category', 'Skills')
-        .eq('default_enabled', true);
+      const { data } = await supabase.from('library_documents').select('id, title, content')
+        .eq('category', 'Skills').eq('default_enabled', true);
       skillDocs = data || [];
     }
 
     // 8. Templates -- always inject all in Guided mode
     let templateDocs = [];
     if (mode !== 'direct') {
-      const { data } = await supabase
-        .from('library_documents')
-        .select('id, title, content')
-        .eq('category', 'Templates')
-        .eq('default_enabled', true);
+      const { data } = await supabase.from('library_documents').select('id, title, content')
+        .eq('category', 'Templates').eq('default_enabled', true);
       templateDocs = data || [];
     }
 
     // 9. Organisation docs -- always inject all in Guided mode
     let orgDocs = [];
     if (mode !== 'direct') {
-      const { data } = await supabase
-        .from('library_documents')
-        .select('id, title, content')
-        .eq('category', 'Organisation')
-        .eq('default_enabled', true);
+      const { data } = await supabase.from('library_documents').select('id, title, content')
+        .eq('category', 'Organisation').eq('default_enabled', true);
       orgDocs = data || [];
     }
 
-    // 10. Sub-project documents (vector-matched, most specific first)
+    // 10. Sub-project documents
     let projectDocs = [];
     if (projectId) {
       const { data } = await supabase.rpc('match_documents', {
@@ -91,7 +126,7 @@ router.post('/', async (req, res) => {
       projectDocs = data || [];
     }
 
-    // 11. Parent project documents (if sub-project active, bubble up)
+    // 11. Parent project documents
     let parentDocs = [];
     if (parentProject) {
       const { data } = await supabase.rpc('match_documents', {
@@ -102,7 +137,12 @@ router.post('/', async (req, res) => {
 
     const isGuided = mode !== 'direct';
 
-    // Debug log
+    // Build active rules -- profile base, project extends
+    const profileRules = profile?.prompt_rules || [];
+    const projectRules = project?.prompt_rules || [];
+    const parentRules = parentProject?.prompt_rules || [];
+    const mergedProjectRules = [...new Set([...parentRules, ...projectRules])];
+
     console.log('--- RAG context ---');
     console.log('Profile:', profile ? profile.role : 'none');
     console.log('Project:', project ? (parentProject ? parentProject.name + ' > ' + project.name : project.name) : 'none');
@@ -114,11 +154,13 @@ router.post('/', async (req, res) => {
     console.log('Org docs:', orgDocs.map(d => d.title));
     console.log('Project docs:', projectDocs.map(d => d.filename));
     console.log('Parent docs:', parentDocs.map(d => d.filename));
+    console.log('Active rules:', [...new Set([...profileRules, ...mergedProjectRules])]);
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
       profile, project, parentProject, memories, recentSessions,
-      resolvedLibraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided
+      resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
+      projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules
     );
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -141,7 +183,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided) {
+function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules) {
 
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -155,6 +197,9 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     'SKILLS INSTRUCTION: When skills documents are available in your context, apply the relevant ' +
     'skill approach and structure when responding to related requests. Do not quote the skill ' +
     'document verbatim -- use it to shape your response.';
+
+  // Inject writing rules immediately after core identity
+  p += buildRulesBlock(profileRules, projectRules);
 
   // User profile
   if (profile) {
@@ -177,7 +222,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     });
   }
 
-  // Parent project context (if sub-project is active)
+  // Parent project context
   if (parentProject) {
     p += '\n\n## Parent Project: ' + parentProject.name;
     if (parentProject.description) p += '\n' + parentProject.description;
@@ -185,7 +230,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     if (parentProject.custom_instructions) p += '\nInstructions: ' + parentProject.custom_instructions;
   }
 
-  // Active project or sub-project context
+  // Active project or sub-project
   if (project) {
     const label = parentProject ? '## Active Sub-project: ' + project.name : '## Active Project: ' + project.name;
     p += '\n\n' + label;
@@ -241,7 +286,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     });
   }
 
-  // Sub-project documents (most specific)
+  // Sub-project documents
   if (projectDocs && projectDocs.length > 0) {
     p += '\n\n## ' + (parentProject ? 'Sub-project Documents' : 'Project Documents');
     projectDocs.forEach(d => {
@@ -250,7 +295,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     });
   }
 
-  // Parent project documents (broader context)
+  // Parent project documents
   if (parentDocs && parentDocs.length > 0) {
     p += '\n\n## Parent Project Documents';
     parentDocs.forEach(d => {
