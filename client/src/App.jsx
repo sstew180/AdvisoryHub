@@ -26,13 +26,6 @@ export default function App() {
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading...</div>;
   if (!session) return <Auth />;
 
-  // Build breadcrumb label for active project
-  const projectLabel = activeProject
-    ? activeProject.parent_id
-      ? null // will be resolved in ChatPage via project data
-      : activeProject.name
-    : null;
-
   return (
     <>
       <Sidebar
@@ -50,18 +43,7 @@ export default function App() {
           />
         )}
         {view === 'profile' && (
-          <div className='page'>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <button className='hamburger' onClick={() => setSidebarOpen(true)} aria-label='Open menu'>
-                <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
-                  <rect x='2' y='4' width='16' height='2' rx='1' fill='currentColor'/>
-                  <rect x='2' y='9' width='16' height='2' rx='1' fill='currentColor'/>
-                  <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
-                </svg>
-              </button>
-            </div>
-            <ProfilePage session={session} />
-          </div>
+          <ProfilePage session={session} onMenuOpen={() => setSidebarOpen(true)} />
         )}
         {view === 'projects' && (
           <ProjectsPage

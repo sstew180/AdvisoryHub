@@ -6,7 +6,7 @@ const API = import.meta.env.VITE_API_URL;
 const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
 const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '' };
 
-export default function LibraryPage({ session }) {
+export default function LibraryPage({ session, onMenuOpen }) {
   const [docs, setDocs] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -39,7 +39,6 @@ export default function LibraryPage({ session }) {
     try {
       await axios.post(API + '/api/library/upload', fd);
       loadDocs();
-      // Reset title, description, sourceUrl -- keep category, domain, jurisdiction
       setForm(f => ({ ...EMPTY_FORM, category: f.category, domain: f.domain, jurisdiction: f.jurisdiction }));
       setUploadSuccess(true);
       setTimeout(() => setUploadSuccess(false), 2000);
@@ -47,7 +46,6 @@ export default function LibraryPage({ session }) {
       setError('Upload failed. Please try again.');
     }
     setUploading(false);
-    // Reset the file input
     e.target.value = '';
   };
 
@@ -70,7 +68,16 @@ export default function LibraryPage({ session }) {
   return (
     <div className='page'>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div className='page-title' style={{ margin: 0 }}>Library</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
+            <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
+              <rect x='2' y='4' width='16' height='2' rx='1' fill='currentColor'/>
+              <rect x='2' y='9' width='16' height='2' rx='1' fill='currentColor'/>
+              <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
+            </svg>
+          </button>
+          <div className='page-title' style={{ margin: 0 }}>Library</div>
+        </div>
         {error && (
           <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={loadDocs}>Retry</button>
         )}
@@ -88,9 +95,7 @@ export default function LibraryPage({ session }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div style={{ fontWeight: 600, fontSize: 14 }}>Upload document</div>
             {uploadSuccess && (
-              <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>
-                Document uploaded
-              </span>
+              <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>
             )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>

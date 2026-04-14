@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
-export default function ProfilePage({ session }) {
+export default function ProfilePage({ session, onMenuOpen }) {
   const [profile, setProfile] = useState({
     role: '', service_area: '', goals: '', organisation: 'City of Gold Coast',
     preferences: '', artefact_preference: 'briefing note', high_scrutiny: false
@@ -25,7 +25,16 @@ export default function ProfilePage({ session }) {
 
   return (
     <div className='page'>
-      <div className='page-title'>Profile</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
+          <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
+            <rect x='2' y='4' width='16' height='2' rx='1' fill='currentColor'/>
+            <rect x='2' y='9' width='16' height='2' rx='1' fill='currentColor'/>
+            <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
+          </svg>
+        </button>
+        <div className='page-title' style={{ margin: 0 }}>Profile</div>
+      </div>
       <div className='page-content'>
         <div className='form-group'>
           <label className='form-label'>Role</label>
