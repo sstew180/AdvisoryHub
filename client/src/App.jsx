@@ -57,6 +57,7 @@ export default function App() {
             session={session} activeProject={activeProject}
             setActiveProject={setActiveProject} setView={setView}
             onMenuOpen={() => setSidebarOpen(true)}
+            setActiveSessionId={setActiveSessionId}
           />
         )}
         {view === 'library' && (

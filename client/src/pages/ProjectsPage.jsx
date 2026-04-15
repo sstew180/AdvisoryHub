@@ -132,8 +132,7 @@ function ProjectRulesTab({ editing, setEditing }) {
                   const state = getState(rule.id);
                   const badge = stateLabel(state);
                   return (
-                    <div key={rule.id}
-                      onClick={() => cycleRule(rule.id)}
+                    <div key={rule.id} onClick={() => cycleRule(rule.id)}
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         padding: '8px 10px', borderRadius: 'var(--radius)', cursor: 'pointer', marginBottom: 4,
                         background: state !== 'inherit' ? 'rgba(0,145,164,0.04)' : 'transparent',
@@ -191,9 +190,8 @@ function ProjectLibraryTab({ projectId }) {
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        Project-scoped library documents are only injected when this project is active. Use this tab to add project-specific skills, templates, or reference documents.
+        Project-scoped library documents are only injected when this project is active.
       </div>
-
       <div className='card' style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontWeight: 600, fontSize: 13 }}>Upload project document</div>
@@ -233,7 +231,6 @@ function ProjectLibraryTab({ projectId }) {
           <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
         </label>
       </div>
-
       {libDocs.length === 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No project-scoped library documents yet.</p>
       )}
@@ -256,7 +253,170 @@ function ProjectLibraryTab({ projectId }) {
   );
 }
 
-export default function ProjectsPage({ session, activeProject, setActiveProject, setView, onMenuOpen }) {
+function ProjectMemoriesTab({ projectId }) {
+  const [memories, setMemories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('session_embeddings')
+      .select('id, content, created_at, session_id')
+      .eq('user_id', (await supabase.auth.getUser()).data.user.id)
+      .order('created_at', { ascending: false });
+
+    // Filter to memories from sessions linked to this project
+    if (data) {
+      const { data: projectSessions } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('project_id', projectId);
+      const sessionIds = new Set((projectSessions || []).map(s => s.id));
+      setMemories(data.filter(m => sessionIds.has(m.session_id)));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [projectId]);
+
+  const deleteMemory = async (id) => {
+    await supabase.from('session_embeddings').delete().eq('id', id);
+    load();
+  };
+
+  const formatContent = (content) => {
+    return content
+      .replace('[PINNED NOTE] ', '')
+      .replace('[AUTO-CAPTURED] ', '')
+      .trim();
+  };
+
+  const getTag = (content) => {
+    if (content.startsWith('[PINNED NOTE]')) return { label: 'Pinned', color: 'var(--accent)' };
+    if (content.startsWith('[AUTO-CAPTURED]')) return { label: 'Auto-captured', color: '#2e7d32' };
+    return { label: 'Memory', color: 'var(--text-muted)' };
+  };
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading memories...</p>;
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+        Notes and memories the AI has captured from sessions in this project. These are injected as context in future sessions.
+      </div>
+      {memories.length === 0 && (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No memories yet. They are created automatically as you work in this project.</p>
+      )}
+      {memories.map(m => {
+        const tag = getTag(m.content);
+        return (
+          <div key={m.id} className='card'
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: tag.color, fontWeight: 600 }}>{tag.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {new Date(m.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                {formatContent(m.content)}
+              </div>
+            </div>
+            <button className='btn btn-danger' style={{ fontSize: 11, marginLeft: 12, flexShrink: 0 }}
+              onClick={() => deleteMemory(m.id)}>
+              Delete
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) {
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('sessions')
+      .select('id, title, summary, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setSessions(data); setLoading(false); });
+  }, [projectId]);
+
+  const groupByDate = (sessions) => {
+    const groups = {};
+    const order = [];
+    for (const s of sessions) {
+      const now = new Date();
+      const date = new Date(s.created_at);
+      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+      let label;
+      if (diffDays === 0) label = 'Today';
+      else if (diffDays === 1) label = 'Yesterday';
+      else if (diffDays <= 7) label = 'This week';
+      else if (diffDays <= 30) label = 'This month';
+      else label = date.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+      if (!groups[label]) { groups[label] = []; order.push(label); }
+      groups[label].push(s);
+    }
+    return order.map(g => ({ label: g, sessions: groups[g] }));
+  };
+
+  const openSession = (sessionId) => {
+    setActiveSessionId(sessionId);
+    setView('chat');
+    onClose();
+  };
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading sessions...</p>;
+
+  if (sessions.length === 0) {
+    return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
+  }
+
+  const groups = groupByDate(sessions);
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+        All sessions linked to this project. Click a session to open it.
+      </div>
+      {groups.map(group => (
+        <div key={group.label} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+            letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>
+            {group.label}
+          </div>
+          {group.sessions.map(s => (
+            <div key={s.id} className='card' onClick={() => openSession(s.id)}
+              style={{ cursor: 'pointer' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className='card-title' style={{ marginBottom: 4 }}>
+                    {s.title || 'Untitled session'}
+                  </div>
+                  {s.summary && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      {s.summary.slice(0, 120)}{s.summary.length > 120 ? '...' : ''}
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 12, flexShrink: 0 }}>
+                  {new Date(s.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function ProjectsPage({ session, activeProject, setActiveProject, setView, onMenuOpen, setActiveSessionId }) {
   const [projects, setProjects] = useState([]);
   const [editing, setEditing] = useState(null);
   const [docs, setDocs] = useState([]);
@@ -320,6 +480,8 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
       ...(editing.id ? [
         { id: 'documents', label: 'Documents' },
         { id: 'library', label: 'Library' },
+        { id: 'memories', label: 'Memories' },
+        { id: 'history', label: 'History' },
       ] : []),
     ];
 
@@ -337,13 +499,15 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
           <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
         </div>
 
-        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)',
+          overflowX: 'auto' }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ padding: '8px 16px', fontSize: 13, border: 'none', background: 'transparent',
+              style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent',
                 cursor: 'pointer', borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
                 color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
-                fontWeight: activeTab === tab.id ? 600 : 400, marginBottom: -1, transition: 'all 0.15s' }}>
+                fontWeight: activeTab === tab.id ? 600 : 400, marginBottom: -1,
+                transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
               {tab.label}
             </button>
           ))}
@@ -428,10 +592,25 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             <ProjectLibraryTab projectId={editing.id} />
           )}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
-            <button className='btn btn-primary' onClick={save}>Save</button>
-            <button className='btn btn-secondary' onClick={() => setEditing(null)}>Cancel</button>
-          </div>
+          {activeTab === 'memories' && editing.id && (
+            <ProjectMemoriesTab projectId={editing.id} />
+          )}
+
+          {activeTab === 'history' && editing.id && (
+            <ProjectHistoryTab
+              projectId={editing.id}
+              setActiveSessionId={setActiveSessionId}
+              setView={setView}
+              onClose={() => setEditing(null)}
+            />
+          )}
+
+          {activeTab !== 'memories' && activeTab !== 'history' && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
+              <button className='btn btn-primary' onClick={save}>Save</button>
+              <button className='btn btn-secondary' onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          )}
         </div>
       </div>
     );
