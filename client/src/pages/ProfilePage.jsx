@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import axios from 'axios';
+
+const API = import.meta.env.VITE_API_URL;
 
 export default function ProfilePage({ session, onMenuOpen }) {
   const [profile, setProfile] = useState({
@@ -8,17 +11,48 @@ export default function ProfilePage({ session, onMenuOpen }) {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [docs, setDocs] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   useEffect(() => {
     supabase.from('profiles').select('*').eq('id', session.user.id).single()
       .then(({ data }) => { if (data) setProfile(p => ({ ...p, ...data })); });
+    loadDocs();
   }, [session]);
+
+  const loadDocs = () => {
+    axios.get(API + '/api/user-documents/' + session.user.id)
+      .then(r => setDocs(r.data))
+      .catch(() => setDocs([]));
+  };
 
   const save = async () => {
     setSaving(true);
     await supabase.from('profiles').upsert({ id: session.user.id, ...profile });
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const uploadDoc = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('userId', session.user.id);
+    try {
+      await axios.post(API + '/api/user-documents/upload', fd);
+      loadDocs();
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 2000);
+    } catch { }
+    setUploading(false);
+    e.target.value = '';
+  };
+
+  const deleteDoc = async (id) => {
+    await axios.delete(API + '/api/user-documents/' + id);
+    loadDocs();
   };
 
   const u = (field, value) => setProfile(p => ({ ...p, [field]: value }));
@@ -76,9 +110,46 @@ export default function ProfilePage({ session, onMenuOpen }) {
             High scrutiny mode (AI flags assumptions and recommends verification)
           </label>
         </div>
-        <button className='btn btn-primary' onClick={save} disabled={saving}>
+        <button className='btn btn-primary' onClick={save} disabled={saving} style={{ marginBottom: 32 }}>
           {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Profile'}
         </button>
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>My Documents</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Available in every session regardless of project. Upload your business unit plan, style guide, or any reference document you always want the AI to draw on.
+              </div>
+            </div>
+            {uploadSuccess && (
+              <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500, flexShrink: 0, marginLeft: 12 }}>
+                Uploaded
+              </span>
+            )}
+          </div>
+          <label className='btn btn-secondary' style={{ cursor: 'pointer', fontSize: 13, marginTop: 12, display: 'inline-block' }}>
+            {uploading ? 'Uploading...' : 'Upload document (PDF, DOCX, TXT)'}
+            <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={uploadDoc} />
+          </label>
+          <div style={{ marginTop: 12 }}>
+            {docs.map(d => (
+              <div key={d.id} className='card'
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div className='card-title'>{d.filename}</div>
+                  <div className='card-meta'>{new Date(d.created_at).toLocaleDateString('en-AU')}</div>
+                </div>
+                <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => deleteDoc(d.id)}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            {docs.length === 0 && (
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>No documents uploaded yet.</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
