@@ -27,6 +27,55 @@ const DEPTH_OPTIONS = [
 
 const isMobile = () => window.innerWidth < 768;
 
+function ThinkingBlock({ steps, collapsed }) {
+  if (steps.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        {/* Left rail */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 3, flexShrink: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+          {!collapsed && steps.length > 1 && (
+            <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4, minHeight: 8 }} />
+          )}
+        </div>
+        {/* Steps */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {collapsed ? (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              {steps[steps.length - 1]}
+            </div>
+          ) : (
+            steps.map((step, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: i < steps.length - 1 ? 8 : 0 }}>
+                {i > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    position: 'absolute', marginLeft: -20 }}>
+                  </div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
+                    fontWeight: i === steps.length - 1 ? 500 : 400,
+                    opacity: 1, animation: 'fadeIn 0.3s ease' }}>
+                    {i > 0 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 6 }}>
+                        <span style={{ width: 4, height: 4, borderRadius: '50%',
+                          background: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
+                          display: 'inline-block' }} />
+                      </span>
+                    )}
+                    {step}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -35,6 +84,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [formatControls, setFormatControls] = useState({ length: null, format: null, depth: null });
   const [formatOpen, setFormatOpen] = useState(!isMobile());
   const [autoCaptured, setAutoCaptured] = useState(null);
+  const [statusSteps, setStatusSteps] = useState([]);
+  const [statusCollapsed, setStatusCollapsed] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -59,7 +110,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, statusSteps]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -94,8 +145,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setMessages(prev => [...prev, userMsg]);
     setStreaming(true);
     setAutoCaptured(null);
+    setStatusSteps([]);
+    setStatusCollapsed(false);
     let assistantText = '';
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    let hasStartedText = false;
 
     const formatForThisSend = { ...formatControls };
     setFormatControls({ length: null, format: null, depth: null });
@@ -108,9 +161,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           userId: session.user.id, sessionId,
           projectId: activeProject?.id || null,
           messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-          mode,
-          ruleOverrides: {},
-          formatControls: formatForThisSend,
+          mode, ruleOverrides: {}, formatControls: formatForThisSend,
         })
       });
       const reader = response.body.getReader();
@@ -124,10 +175,17 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           if (data === '[DONE]') break;
           try {
             const parsed = JSON.parse(data);
-            if (parsed.autocaptured) {
+            if (parsed.status) {
+              setStatusSteps(prev => [...prev, parsed.status]);
+            } else if (parsed.autocaptured) {
               setAutoCaptured(parsed.autocaptured);
               setTimeout(() => setAutoCaptured(null), 4000);
             } else if (parsed.text) {
+              if (!hasStartedText) {
+                hasStartedText = true;
+                setStatusCollapsed(true);
+                setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+              }
               assistantText += parsed.text;
               setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
             }
@@ -149,6 +207,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       }
     } catch (err) { console.error(err); }
     setStreaming(false);
+    // Clear status after response completes
+    setTimeout(() => setStatusSteps([]), 2000);
   };
 
   const OptionPill = ({ active, onClick, children }) => (
@@ -164,6 +224,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden',
       height: 'var(--real-vh, 100dvh)' }}>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
       <div className='topbar'>
         <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
           <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
@@ -177,8 +242,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
         {activeProject && <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>}
-
-        {/* Auto-capture toast */}
         {autoCaptured && (
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
             background: 'rgba(0,145,164,0.08)', border: '1px solid var(--accent)',
@@ -190,7 +253,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       </div>
 
       <div className='chat-area'>
-        {messages.length === 0 && (
+        {messages.length === 0 && statusSteps.length === 0 && (
           <div style={{ color: 'var(--text-muted)', paddingTop: 40, textAlign: 'center' }}>
             <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>AdvisoryHub</div>
             <div style={{ fontSize: 14 }}>Risk, Audit and Insurance</div>
@@ -200,6 +263,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <Message key={i} message={msg} session={session}
             sessionId={activeSessionId} onPin={() => console.log('Pinned')} />
         ))}
+        {statusSteps.length > 0 && (
+          <div style={{ padding: '8px 0 4px' }}>
+            <ThinkingBlock steps={statusSteps} collapsed={statusCollapsed} />
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 

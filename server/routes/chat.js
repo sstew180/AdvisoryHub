@@ -121,14 +121,25 @@ function mergeLibraryDocs(globalDocs, projectDocs) {
   return [...projectDocs, ...filtered];
 }
 
+function sendStatus(res, message) {
+  res.write('data: ' + JSON.stringify({ status: message }) + '\n\n');
+}
+
 router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode, ruleOverrides, formatControls } = req.body;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
   try {
+    sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
     let project = null;
     let parentProject = null;
     if (projectId) {
+      sendStatus(res, 'Loading project context');
       const { data } = await supabase.from('projects').select('*').eq('id', projectId).single();
       project = data;
       if (project?.parent_id) {
@@ -140,31 +151,27 @@ router.post('/', async (req, res) => {
     const userQuery = messages[messages.length - 1].content;
     const queryEmbedding = await embed(userQuery);
 
-    // Check for auto-capture trigger phrases
     const capturedNote = detectTrigger(userQuery);
     if (capturedNote && sessionId) {
       const noteEmbedding = await embed(capturedNote);
       supabase.from('session_embeddings').insert({
-        session_id: sessionId,
-        user_id: userId,
-        content: '[AUTO-CAPTURED] ' + capturedNote,
-        embedding: noteEmbedding,
+        session_id: sessionId, user_id: userId,
+        content: '[AUTO-CAPTURED] ' + capturedNote, embedding: noteEmbedding,
       }).then(() => console.log('Auto-captured note:', capturedNote))
         .catch(err => console.error('Auto-capture error:', err));
     }
 
+    sendStatus(res, 'Searching your memories');
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding, match_user_id: userId, match_threshold: 0.7, match_count: 5
     });
 
     const { data: recentSessions } = await supabase
-      .from('sessions')
-      .select('id, title, summary, created_at')
-      .eq('user_id', userId)
-      .not('summary', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(5);
+      .from('sessions').select('id, title, summary, created_at')
+      .eq('user_id', userId).not('summary', 'is', null)
+      .order('created_at', { ascending: false }).limit(5);
 
+    sendStatus(res, 'Fetching relevant frameworks');
     const { data: allLibraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding, match_threshold: 0.7, match_count: 8
     });
@@ -184,10 +191,8 @@ router.post('/', async (req, res) => {
 
     if (activeProjectIds.length > 0 && mode !== 'direct') {
       const { data: projLibDocs } = await supabase
-        .from('library_documents')
-        .select('id, title, category, content, source_url')
-        .in('project_id', activeProjectIds)
-        .eq('default_enabled', true);
+        .from('library_documents').select('id, title, category, content, source_url')
+        .in('project_id', activeProjectIds).eq('default_enabled', true);
       if (projLibDocs) {
         projectLibrarySkills = projLibDocs.filter(d => d.category === 'Skills');
         projectLibraryTemplates = projLibDocs.filter(d => d.category === 'Templates');
@@ -199,24 +204,22 @@ router.post('/', async (req, res) => {
     }
 
     let globalSkillDocs = [];
-    if (mode !== 'direct') {
-      const { data } = await supabase.from('library_documents').select('id, title, content')
-        .eq('category', 'Skills').eq('default_enabled', true).is('project_id', null);
-      globalSkillDocs = data || [];
-    }
-
     let globalTemplateDocs = [];
-    if (mode !== 'direct') {
-      const { data } = await supabase.from('library_documents').select('id, title, content')
-        .eq('category', 'Templates').eq('default_enabled', true).is('project_id', null);
-      globalTemplateDocs = data || [];
-    }
-
     let globalOrgDocs = [];
+
     if (mode !== 'direct') {
-      const { data } = await supabase.from('library_documents').select('id, title, content')
-        .eq('category', 'Organisation').eq('default_enabled', true).is('project_id', null);
-      globalOrgDocs = data || [];
+      sendStatus(res, 'Loading skills and templates');
+      const [skillRes, templateRes, orgRes] = await Promise.all([
+        supabase.from('library_documents').select('id, title, content')
+          .eq('category', 'Skills').eq('default_enabled', true).is('project_id', null),
+        supabase.from('library_documents').select('id, title, content')
+          .eq('category', 'Templates').eq('default_enabled', true).is('project_id', null),
+        supabase.from('library_documents').select('id, title, content')
+          .eq('category', 'Organisation').eq('default_enabled', true).is('project_id', null),
+      ]);
+      globalSkillDocs = skillRes.data || [];
+      globalTemplateDocs = templateRes.data || [];
+      globalOrgDocs = orgRes.data || [];
     }
 
     const skillDocs = mergeLibraryDocs(globalSkillDocs, projectLibrarySkills);
@@ -224,11 +227,9 @@ router.post('/', async (req, res) => {
     const orgDocs = mergeLibraryDocs(globalOrgDocs, projectLibraryOrg);
     const resolvedLibraryDocs = mergeLibraryDocs(globalLibraryDocs, projectLibraryFrameworks);
 
+    sendStatus(res, 'Pulling your documents');
     const { data: userDocsRaw } = await supabase.rpc('match_user_documents', {
-      query_embedding: queryEmbedding,
-      match_user_id: userId,
-      match_threshold: 0.7,
-      match_count: 3,
+      query_embedding: queryEmbedding, match_user_id: userId, match_threshold: 0.7, match_count: 3,
     });
     const userDocs = userDocsRaw || [];
 
@@ -258,17 +259,11 @@ router.post('/', async (req, res) => {
     console.log('Profile:', profile ? profile.role : 'none');
     console.log('Project:', project ? (parentProject ? parentProject.name + ' > ' + project.name : project.name) : 'none');
     console.log('Memories:', memories ? memories.length : 0);
-    console.log('Session summaries:', recentSessions ? recentSessions.length : 0);
     console.log('Library docs:', resolvedLibraryDocs.map(d => d.title));
     console.log('Skills:', skillDocs.map(d => d.title));
-    console.log('Templates:', templateDocs.map(d => d.title));
-    console.log('Org docs:', orgDocs.map(d => d.title));
     console.log('User docs:', userDocs.map(d => d.filename));
     console.log('Project docs:', projectDocs.map(d => d.filename));
-    console.log('Parent docs:', parentDocs.map(d => d.filename));
     console.log('Auto-capture:', capturedNote || 'none');
-    console.log('Active rules:', [...new Set([...profileRules, ...mergedProjectRules])]);
-    console.log('Format controls:', formatControls || {});
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
@@ -278,14 +273,11 @@ router.post('/', async (req, res) => {
       ruleOverrides, formatControls
     );
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Send auto-capture confirmation as first SSE event if triggered
     if (capturedNote) {
       res.write('data: ' + JSON.stringify({ autocaptured: capturedNote }) + '\n\n');
     }
+
+    sendStatus(res, 'Responding');
 
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6', max_tokens: 8192, system: systemPrompt, messages
@@ -299,7 +291,8 @@ router.post('/', async (req, res) => {
     res.end();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.write('data: ' + JSON.stringify({ error: err.message }) + '\n\n');
+    res.end();
   }
 });
 
@@ -334,10 +327,7 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
 
   if (orgDocs && orgDocs.length > 0) {
     p += '\n\n## Organisation Guidelines';
-    orgDocs.forEach(d => {
-      p += '\n\n### ' + d.title;
-      p += '\n' + d.content.slice(0, 4000);
-    });
+    orgDocs.forEach(d => { p += '\n\n### ' + d.title + '\n' + d.content.slice(0, 4000); });
   }
 
   if (parentProject) {
@@ -372,53 +362,36 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
 
   if (skillDocs && skillDocs.length > 0) {
     p += '\n\n## Skills and Approaches';
-    skillDocs.forEach(d => {
-      p += '\n\n### ' + d.title;
-      p += '\n' + d.content.slice(0, 2000);
-    });
+    skillDocs.forEach(d => { p += '\n\n### ' + d.title + '\n' + d.content.slice(0, 2000); });
   }
 
   if (templateDocs && templateDocs.length > 0) {
     p += '\n\n## Available Templates';
-    p += '\nThe following templates are available. When the user asks to complete a template, ' +
-      'use the relevant one and fill every field using the project context and conversation.';
-    templateDocs.forEach(d => {
-      p += '\n\n### Template: ' + d.title;
-      p += '\n' + d.content.slice(0, 4000);
-    });
+    p += '\nWhen the user asks to complete a template, use the relevant one and fill every field.';
+    templateDocs.forEach(d => { p += '\n\n### Template: ' + d.title + '\n' + d.content.slice(0, 4000); });
   }
 
   if (libraryDocs && libraryDocs.length > 0) {
     p += '\n\n## Relevant Frameworks and Guidance';
     libraryDocs.forEach(d => {
-      p += '\n\n### ' + d.title;
-      p += '\n' + d.content.slice(0, 8000);
+      p += '\n\n### ' + d.title + '\n' + d.content.slice(0, 8000);
       if (d.source_url) p += '\nSource: ' + d.source_url;
     });
   }
 
   if (userDocs && userDocs.length > 0) {
     p += '\n\n## My Documents';
-    userDocs.forEach(d => {
-      p += '\n\n### ' + d.filename;
-      p += '\n' + d.content.slice(0, 8000);
-    });
+    userDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
   }
 
   if (projectDocs && projectDocs.length > 0) {
     p += '\n\n## ' + (parentProject ? 'Sub-project Documents' : 'Project Documents');
-    projectDocs.forEach(d => {
-      p += '\n\n### ' + d.filename;
-      p += '\n' + d.content.slice(0, 8000);
-    });
+    projectDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
   }
 
   if (parentDocs && parentDocs.length > 0) {
     p += '\n\n## Parent Project Documents';
-    parentDocs.forEach(d => {
-      p += '\n\n### ' + d.filename;
-      p += '\n' + d.content.slice(0, 8000);
-    });
+    parentDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
   }
 
   return p;
