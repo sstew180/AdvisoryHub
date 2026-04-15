@@ -27,19 +27,36 @@ const DEPTH_OPTIONS = [
 
 const isMobile = () => window.innerWidth < 768;
 
+// Suggested prompts -- two sets: general and project-active
+const GENERAL_PROMPTS = [
+  'What are the key elements of an effective risk appetite statement for a local government?',
+  'Summarise the QAO better practice approach to internal audit planning.',
+  'Draft a briefing note on the requirements of the Local Government Act 2009 for risk management.',
+  'What should be included in an insurance renewal briefing for the executive?',
+  'Explain the difference between inherent and residual risk with a practical example.',
+  'What does ISO 31000 say about risk treatment options?',
+];
+
+const PROJECT_PROMPTS = [
+  'Summarise the key objectives and current status of this project.',
+  'What are the main risks associated with this project?',
+  'Draft a briefing note on the progress of this project.',
+  'What decisions are outstanding on this project?',
+  'Identify any assumptions in this project that should be tested.',
+  'What would a critical review of this project highlight?',
+];
+
 function ThinkingBlock({ steps, collapsed }) {
   if (steps.length === 0) return null;
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Left rail */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 3, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
           {!collapsed && steps.length > 1 && (
             <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4, minHeight: 8 }} />
           )}
         </div>
-        {/* Steps */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {collapsed ? (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
@@ -47,30 +64,52 @@ function ThinkingBlock({ steps, collapsed }) {
             </div>
           ) : (
             steps.map((step, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: i < steps.length - 1 ? 8 : 0 }}>
-                {i > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    position: 'absolute', marginLeft: -20 }}>
-                  </div>
-                )}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
-                    fontWeight: i === steps.length - 1 ? 500 : 400,
-                    opacity: 1, animation: 'fadeIn 0.3s ease' }}>
-                    {i > 0 && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 6 }}>
-                        <span style={{ width: 4, height: 4, borderRadius: '50%',
-                          background: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
-                          display: 'inline-block' }} />
-                      </span>
-                    )}
-                    {step}
-                  </div>
+              <div key={i} style={{ marginBottom: i < steps.length - 1 ? 8 : 0 }}>
+                <div style={{ fontSize: 12, color: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
+                  fontWeight: i === steps.length - 1 ? 500 : 400, animation: 'fadeIn 0.3s ease' }}>
+                  {i > 0 && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 6 }}>
+                      <span style={{ width: 4, height: 4, borderRadius: '50%',
+                        background: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
+                        display: 'inline-block' }} />
+                    </span>
+                  )}
+                  {step}
                 </div>
               </div>
             ))
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ activeProject, onPromptClick }) {
+  const prompts = activeProject ? PROJECT_PROMPTS : GENERAL_PROMPTS;
+  const subtitle = activeProject
+    ? 'Active project: ' + activeProject.name
+    : 'Risk, Audit and Insurance';
+
+  return (
+    <div style={{ paddingTop: 48, paddingBottom: 32, maxWidth: 600, margin: '0 auto', width: '100%' }}>
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+          AdvisoryHub
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {prompts.map((prompt, i) => (
+          <div key={i} onClick={() => onPromptClick(prompt)}
+            style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.45,
+              background: 'var(--bg)', transition: 'all 0.15s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+            {prompt}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -133,6 +172,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const formatActiveCount = Object.values(formatControls).filter(Boolean).length;
+
+  const handlePromptClick = (prompt) => {
+    setInput(prompt);
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
 
   const send = async () => {
     if (!input.trim() || streaming) return;
@@ -207,7 +251,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       }
     } catch (err) { console.error(err); }
     setStreaming(false);
-    // Clear status after response completes
     setTimeout(() => setStatusSteps([]), 2000);
   };
 
@@ -254,10 +297,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <div className='chat-area'>
         {messages.length === 0 && statusSteps.length === 0 && (
-          <div style={{ color: 'var(--text-muted)', paddingTop: 40, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>AdvisoryHub</div>
-            <div style={{ fontSize: 14 }}>Risk, Audit and Insurance</div>
-          </div>
+          <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
