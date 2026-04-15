@@ -27,7 +27,6 @@ const DEPTH_OPTIONS = [
 
 const isMobile = () => window.innerWidth < 768;
 
-// Suggested prompts -- two sets: general and project-active
 const GENERAL_PROMPTS = [
   'What are the key elements of an effective risk appetite statement for a local government?',
   'Summarise the QAO better practice approach to internal audit planning.',
@@ -87,16 +86,11 @@ function ThinkingBlock({ steps, collapsed }) {
 
 function EmptyState({ activeProject, onPromptClick }) {
   const prompts = activeProject ? PROJECT_PROMPTS : GENERAL_PROMPTS;
-  const subtitle = activeProject
-    ? 'Active project: ' + activeProject.name
-    : 'Risk, Audit and Insurance';
-
+  const subtitle = activeProject ? 'Active project: ' + activeProject.name : 'Risk, Audit and Insurance';
   return (
     <div style={{ paddingTop: 48, paddingBottom: 32, maxWidth: 600, margin: '0 auto', width: '100%' }}>
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
-          AdvisoryHub
-        </div>
+        <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>AdvisoryHub</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -125,6 +119,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [autoCaptured, setAutoCaptured] = useState(null);
   const [statusSteps, setStatusSteps] = useState([]);
   const [statusCollapsed, setStatusCollapsed] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -176,6 +171,31 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const handlePromptClick = (prompt) => {
     setInput(prompt);
     setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+
+  const downloadSession = async () => {
+    if (!activeSessionId || downloading) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(API + '/api/generate-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId, userId: session.user.id }),
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('content-disposition');
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'session.docx';
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) { console.error(err); }
+    setDownloading(false);
   };
 
   const send = async () => {
@@ -389,9 +409,21 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
               </span>
-              <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
-                {streaming ? '...' : 'Send'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {messages.length > 0 && activeSessionId && (
+                  <button onClick={downloadSession} disabled={downloading || streaming}
+                    title='Download session as Word document'
+                    style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                      padding: '5px 10px', cursor: 'pointer', transition: 'all 0.15s',
+                      opacity: downloading ? 0.5 : 1 }}>
+                    {downloading ? '...' : '↓ Doc'}
+                  </button>
+                )}
+                <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
+                  {streaming ? '...' : 'Send'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
