@@ -15,4 +15,5 @@ app.use('/api/pin-memory', require('./routes/pinMemory'));
 app.use('/api/library', require('./routes/library'));
 app.use('/api/generate-title', require('./routes/generateTitle'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api/user-documents', require('./routes/userDocuments'));
 app.listen(PORT, () => console.log(`AdvisoryHub API running on port ${PORT}`));

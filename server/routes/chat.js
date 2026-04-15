@@ -62,19 +62,16 @@ function buildRulesBlock(profileRules, projectRules, promptOverrides) {
   const profileActive = Array.isArray(profileRules) ? profileRules : [];
   const projectOverrides = Array.isArray(projectRules) ? projectRules : [];
   let active = new Set(profileActive);
-
   for (const rule of projectOverrides) {
     if (rule.endsWith(':on')) active.add(rule.replace(':on', ''));
     else if (rule.endsWith(':off')) active.delete(rule.replace(':off', ''));
     else active.add(rule);
   }
-
   const overrides = promptOverrides && typeof promptOverrides === 'object' ? promptOverrides : {};
   for (const [id, state] of Object.entries(overrides)) {
     if (state === 'on') active.add(id);
     else if (state === 'off') active.delete(id);
   }
-
   if (active.size === 0) return '';
   const instructions = [...active]
     .map(id => RULE_DEFINITIONS[id])
@@ -159,7 +156,6 @@ router.post('/', async (req, res) => {
         .select('id, title, category, content, source_url')
         .in('project_id', activeProjectIds)
         .eq('default_enabled', true);
-
       if (projLibDocs) {
         projectLibrarySkills = projLibDocs.filter(d => d.category === 'Skills');
         projectLibraryTemplates = projLibDocs.filter(d => d.category === 'Templates');
@@ -196,6 +192,15 @@ router.post('/', async (req, res) => {
     const orgDocs = mergeLibraryDocs(globalOrgDocs, projectLibraryOrg);
     const resolvedLibraryDocs = mergeLibraryDocs(globalLibraryDocs, projectLibraryFrameworks);
 
+    // User documents -- vector matched, always available regardless of project
+    const { data: userDocsRaw } = await supabase.rpc('match_user_documents', {
+      query_embedding: queryEmbedding,
+      match_user_id: userId,
+      match_threshold: 0.7,
+      match_count: 3,
+    });
+    const userDocs = userDocsRaw || [];
+
     let projectDocs = [];
     if (projectId) {
       const { data } = await supabase.rpc('match_documents', {
@@ -227,17 +232,17 @@ router.post('/', async (req, res) => {
     console.log('Skills:', skillDocs.map(d => d.title));
     console.log('Templates:', templateDocs.map(d => d.title));
     console.log('Org docs:', orgDocs.map(d => d.title));
+    console.log('User docs:', userDocs.map(d => d.filename));
     console.log('Project docs:', projectDocs.map(d => d.filename));
     console.log('Parent docs:', parentDocs.map(d => d.filename));
     console.log('Active rules:', [...new Set([...profileRules, ...mergedProjectRules])]);
-    console.log('Rule overrides:', ruleOverrides || {});
     console.log('Format controls:', formatControls || {});
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
       profile, project, parentProject, memories, recentSessions,
       resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
-      projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules,
+      userDocs, projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules,
       ruleOverrides, formatControls
     );
 
@@ -261,7 +266,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
+function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, userDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
 
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -352,6 +357,15 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
       p += '\n\n### ' + d.title;
       p += '\n' + d.content.slice(0, 8000);
       if (d.source_url) p += '\nSource: ' + d.source_url;
+    });
+  }
+
+  // User documents -- always available, injected after library, before project docs
+  if (userDocs && userDocs.length > 0) {
+    p += '\n\n## My Documents';
+    userDocs.forEach(d => {
+      p += '\n\n### ' + d.filename;
+      p += '\n' + d.content.slice(0, 8000);
     });
   }
 
