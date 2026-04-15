@@ -25,7 +25,6 @@ const DEPTH_OPTIONS = [
   { id: 'critical', label: 'Critical' },
 ];
 
-// Detect mobile
 const isMobile = () => window.innerWidth < 768;
 
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
@@ -35,6 +34,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [mode, setMode] = useState('guided');
   const [formatControls, setFormatControls] = useState({ length: null, format: null, depth: null });
   const [formatOpen, setFormatOpen] = useState(!isMobile());
+  const [autoCaptured, setAutoCaptured] = useState(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -93,6 +93,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
     setMessages(prev => [...prev, userMsg]);
     setStreaming(true);
+    setAutoCaptured(null);
     let assistantText = '';
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
@@ -122,9 +123,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           const data = line.slice(6);
           if (data === '[DONE]') break;
           try {
-            const { text } = JSON.parse(data);
-            assistantText += text;
-            setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
+            const parsed = JSON.parse(data);
+            if (parsed.autocaptured) {
+              setAutoCaptured(parsed.autocaptured);
+              setTimeout(() => setAutoCaptured(null), 4000);
+            } else if (parsed.text) {
+              assistantText += parsed.text;
+              setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
+            }
           } catch {}
         }
       }
@@ -158,8 +164,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden',
       height: 'var(--real-vh, 100dvh)' }}>
-
-      {/* Topbar -- clean: just hamburger, mode toggle, project indicator */}
       <div className='topbar'>
         <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
           <svg width='20' height='20' viewBox='0 0 20 20' fill='none'>
@@ -173,6 +177,16 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
         {activeProject && <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>}
+
+        {/* Auto-capture toast */}
+        {autoCaptured && (
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
+            background: 'rgba(0,145,164,0.08)', border: '1px solid var(--accent)',
+            borderRadius: 'var(--radius)', padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+            Note captured
+          </div>
+        )}
       </div>
 
       <div className='chat-area'>
@@ -192,15 +206,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       <div className='input-area'>
         <div className='input-area-inner'>
           <div className='input-box'>
-
-            {/* Format toolbar -- collapsible, open by default on desktop */}
             <div style={{ borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
-
-              {/* Toggle row */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 4px',
                 gap: 8, borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
-                <button
-                  onClick={() => setFormatOpen(o => !o)}
+                <button onClick={() => setFormatOpen(o => !o)}
                   style={{ fontSize: 11, color: formatActiveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
                     background: 'none', border: 'none', cursor: 'pointer', padding: 0,
                     display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
@@ -227,52 +236,38 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                   </button>
                 )}
               </div>
-
-              {/* Expanded controls */}
               {formatOpen && (
                 <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px',
                   flexWrap: 'wrap', alignItems: 'center' }}>
-
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
                       textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Length</span>
                     {LENGTH_OPTIONS.map(o => (
                       <OptionPill key={o.id} active={formatControls.length === o.id}
-                        onClick={() => toggleFormat('length', o.id)}>
-                        {o.label}
-                      </OptionPill>
+                        onClick={() => toggleFormat('length', o.id)}>{o.label}</OptionPill>
                     ))}
                   </div>
-
                   <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
-
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
                       textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Format</span>
                     {FORMAT_OPTIONS.map(o => (
                       <OptionPill key={o.id} active={formatControls.format === o.id}
-                        onClick={() => toggleFormat('format', o.id)}>
-                        {o.label}
-                      </OptionPill>
+                        onClick={() => toggleFormat('format', o.id)}>{o.label}</OptionPill>
                     ))}
                   </div>
-
                   <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
-
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
                       textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Depth</span>
                     {DEPTH_OPTIONS.map(o => (
                       <OptionPill key={o.id} active={formatControls.depth === o.id}
-                        onClick={() => toggleFormat('depth', o.id)}>
-                        {o.label}
-                      </OptionPill>
+                        onClick={() => toggleFormat('depth', o.id)}>{o.label}</OptionPill>
                     ))}
                   </div>
                 </div>
               )}
             </div>
-
             <textarea
               ref={textareaRef}
               className='input-textarea'

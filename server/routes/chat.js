@@ -5,6 +5,25 @@ const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const TRIGGER_PHRASES = [
+  { prefix: 'remember that ', strip: 'remember that ' },
+  { prefix: 'remember: ', strip: 'remember: ' },
+  { prefix: 'note: ', strip: 'note: ' },
+  { prefix: 'note that ', strip: 'note that ' },
+  { prefix: 'capture: ', strip: 'capture: ' },
+  { prefix: 'capture this: ', strip: 'capture this: ' },
+];
+
+function detectTrigger(text) {
+  const lower = text.toLowerCase().trim();
+  for (const t of TRIGGER_PHRASES) {
+    if (lower.startsWith(t.prefix)) {
+      return text.slice(t.strip.length).trim();
+    }
+  }
+  return null;
+}
+
 const RULE_DEFINITIONS = {
   no_abstract_concepts: 'Do not introduce any concept without anchoring it to a specific data point, document, or recorded example. If a paragraph reads like a textbook definition, rewrite it.',
   movement_verbs_evidence: 'If you use words such as "shifted", "evolved", "accelerated", or "embedded", you must immediately cite what specifically changed and where it is recorded.',
@@ -121,6 +140,19 @@ router.post('/', async (req, res) => {
     const userQuery = messages[messages.length - 1].content;
     const queryEmbedding = await embed(userQuery);
 
+    // Check for auto-capture trigger phrases
+    const capturedNote = detectTrigger(userQuery);
+    if (capturedNote && sessionId) {
+      const noteEmbedding = await embed(capturedNote);
+      supabase.from('session_embeddings').insert({
+        session_id: sessionId,
+        user_id: userId,
+        content: '[AUTO-CAPTURED] ' + capturedNote,
+        embedding: noteEmbedding,
+      }).then(() => console.log('Auto-captured note:', capturedNote))
+        .catch(err => console.error('Auto-capture error:', err));
+    }
+
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding, match_user_id: userId, match_threshold: 0.7, match_count: 5
     });
@@ -192,7 +224,6 @@ router.post('/', async (req, res) => {
     const orgDocs = mergeLibraryDocs(globalOrgDocs, projectLibraryOrg);
     const resolvedLibraryDocs = mergeLibraryDocs(globalLibraryDocs, projectLibraryFrameworks);
 
-    // User documents -- vector matched, always available regardless of project
     const { data: userDocsRaw } = await supabase.rpc('match_user_documents', {
       query_embedding: queryEmbedding,
       match_user_id: userId,
@@ -235,6 +266,7 @@ router.post('/', async (req, res) => {
     console.log('User docs:', userDocs.map(d => d.filename));
     console.log('Project docs:', projectDocs.map(d => d.filename));
     console.log('Parent docs:', parentDocs.map(d => d.filename));
+    console.log('Auto-capture:', capturedNote || 'none');
     console.log('Active rules:', [...new Set([...profileRules, ...mergedProjectRules])]);
     console.log('Format controls:', formatControls || {});
     console.log('-------------------');
@@ -249,6 +281,11 @@ router.post('/', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+
+    // Send auto-capture confirmation as first SSE event if triggered
+    if (capturedNote) {
+      res.write('data: ' + JSON.stringify({ autocaptured: capturedNote }) + '\n\n');
+    }
 
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6', max_tokens: 8192, system: systemPrompt, messages
@@ -360,7 +397,6 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     });
   }
 
-  // User documents -- always available, injected after library, before project docs
   if (userDocs && userDocs.length > 0) {
     p += '\n\n## My Documents';
     userDocs.forEach(d => {
