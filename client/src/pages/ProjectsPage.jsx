@@ -264,13 +264,9 @@ function ProjectMemoriesTab({ projectId }) {
       .select('id, content, created_at, session_id')
       .eq('user_id', (await supabase.auth.getUser()).data.user.id)
       .order('created_at', { ascending: false });
-
-    // Filter to memories from sessions linked to this project
     if (data) {
       const { data: projectSessions } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('project_id', projectId);
+        .from('sessions').select('id').eq('project_id', projectId);
       const sessionIds = new Set((projectSessions || []).map(s => s.id));
       setMemories(data.filter(m => sessionIds.has(m.session_id)));
     }
@@ -284,12 +280,8 @@ function ProjectMemoriesTab({ projectId }) {
     load();
   };
 
-  const formatContent = (content) => {
-    return content
-      .replace('[PINNED NOTE] ', '')
-      .replace('[AUTO-CAPTURED] ', '')
-      .trim();
-  };
+  const formatContent = (content) => content
+    .replace('[PINNED NOTE] ', '').replace('[AUTO-CAPTURED] ', '').trim();
 
   const getTag = (content) => {
     if (content.startsWith('[PINNED NOTE]')) return { label: 'Pinned', color: 'var(--accent)' };
@@ -302,7 +294,7 @@ function ProjectMemoriesTab({ projectId }) {
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        Notes and memories the AI has captured from sessions in this project. These are injected as context in future sessions.
+        Notes and memories the AI has captured from sessions in this project.
       </div>
       {memories.length === 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No memories yet. They are created automatically as you work in this project.</p>
@@ -324,9 +316,7 @@ function ProjectMemoriesTab({ projectId }) {
               </div>
             </div>
             <button className='btn btn-danger' style={{ fontSize: 11, marginLeft: 12, flexShrink: 0 }}
-              onClick={() => deleteMemory(m.id)}>
-              Delete
-            </button>
+              onClick={() => deleteMemory(m.id)}>Delete</button>
           </div>
         );
       })}
@@ -339,65 +329,44 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('sessions')
-      .select('id, title, summary, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false })
+    supabase.from('sessions').select('id, title, summary, created_at')
+      .eq('project_id', projectId).order('created_at', { ascending: false })
       .then(({ data }) => { if (data) setSessions(data); setLoading(false); });
   }, [projectId]);
 
   const groupByDate = (sessions) => {
-    const groups = {};
-    const order = [];
+    const groups = {}; const order = [];
     for (const s of sessions) {
-      const now = new Date();
-      const date = new Date(s.created_at);
-      const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-      let label;
-      if (diffDays === 0) label = 'Today';
-      else if (diffDays === 1) label = 'Yesterday';
-      else if (diffDays <= 7) label = 'This week';
-      else if (diffDays <= 30) label = 'This month';
-      else label = date.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+      const diffDays = Math.floor((new Date() - new Date(s.created_at)) / (1000 * 60 * 60 * 24));
+      const label = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Yesterday' : diffDays <= 7 ? 'This week' :
+        diffDays <= 30 ? 'This month' : new Date(s.created_at).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
       if (!groups[label]) { groups[label] = []; order.push(label); }
       groups[label].push(s);
     }
     return order.map(g => ({ label: g, sessions: groups[g] }));
   };
 
-  const openSession = (sessionId) => {
-    setActiveSessionId(sessionId);
-    setView('chat');
-    onClose();
-  };
+  const openSession = (sessionId) => { setActiveSessionId(sessionId); setView('chat'); onClose(); };
 
   if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading sessions...</p>;
-
-  if (sessions.length === 0) {
-    return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
-  }
-
-  const groups = groupByDate(sessions);
+  if (sessions.length === 0) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
 
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
         All sessions linked to this project. Click a session to open it.
       </div>
-      {groups.map(group => (
+      {groupByDate(sessions).map(group => (
         <div key={group.label} style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
             letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>
             {group.label}
           </div>
           {group.sessions.map(s => (
-            <div key={s.id} className='card' onClick={() => openSession(s.id)}
-              style={{ cursor: 'pointer' }}>
+            <div key={s.id} className='card' onClick={() => openSession(s.id)} style={{ cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className='card-title' style={{ marginBottom: 4 }}>
-                    {s.title || 'Untitled session'}
-                  </div>
+                  <div className='card-title' style={{ marginBottom: 4 }}>{s.title || 'Untitled session'}</div>
                   {s.summary && (
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       {s.summary.slice(0, 120)}{s.summary.length > 120 ? '...' : ''}
@@ -423,8 +392,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const [uploading, setUploading] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [activeTab, setActiveTab] = useState('details');
+  const [projectCounts, setProjectCounts] = useState({});
 
   useEffect(() => { load(); }, []);
+
   useEffect(() => {
     if (editing?.id) loadDocs(editing.id);
     setActiveTab('details');
@@ -433,7 +404,32 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const load = async () => {
     const { data } = await supabase.from('projects').select('*')
       .eq('user_id', session.user.id).order('name');
-    if (data) setProjects(data);
+    if (data) {
+      setProjects(data);
+      loadCounts(data.map(p => p.id));
+    }
+  };
+
+  const loadCounts = async (projectIds) => {
+    if (!projectIds.length) return;
+    const [sessionsRes, memoriesRes] = await Promise.all([
+      supabase.from('sessions').select('id, project_id').in('project_id', projectIds),
+      supabase.from('session_embeddings').select('id, session_id').eq('user_id', session.user.id),
+    ]);
+    const sessions = sessionsRes.data || [];
+    const memories = memoriesRes.data || [];
+    const sessionIdsByProject = {};
+    for (const s of sessions) {
+      if (!sessionIdsByProject[s.project_id]) sessionIdsByProject[s.project_id] = new Set();
+      sessionIdsByProject[s.project_id].add(s.id);
+    }
+    const counts = {};
+    for (const pid of projectIds) {
+      const sessionIds = sessionIdsByProject[pid] || new Set();
+      const memCount = memories.filter(m => sessionIds.has(m.session_id)).length;
+      counts[pid] = { sessions: sessionIds.size, memories: memCount };
+    }
+    setProjectCounts(counts);
   };
 
   const loadDocs = async (id) => {
@@ -472,6 +468,20 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
   const topLevelOptions = projects.filter(p => !p.parent_id);
+
+  const CountBar = ({ projectId }) => {
+    const c = projectCounts[projectId];
+    if (!c) return null;
+    const parts = [];
+    if (c.sessions > 0) parts.push(c.sessions + ' session' + (c.sessions !== 1 ? 's' : ''));
+    if (c.memories > 0) parts.push(c.memories + ' memor' + (c.memories !== 1 ? 'ies' : 'y'));
+    if (!parts.length) return null;
+    return (
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+        {parts.join(' · ')}
+      </div>
+    );
+  };
 
   if (editing) {
     const tabs = [
@@ -563,11 +573,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               </div>
             </>
           )}
-
-          {activeTab === 'rules' && (
-            <ProjectRulesTab editing={editing} setEditing={setEditing} />
-          )}
-
+          {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
           {activeTab === 'documents' && editing.id && (
             <>
               <label className='btn btn-secondary' style={{ cursor: 'pointer', marginBottom: 12, display: 'inline-block' }}>
@@ -587,24 +593,12 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               {docs.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded yet.</p>}
             </>
           )}
-
-          {activeTab === 'library' && editing.id && (
-            <ProjectLibraryTab projectId={editing.id} />
-          )}
-
-          {activeTab === 'memories' && editing.id && (
-            <ProjectMemoriesTab projectId={editing.id} />
-          )}
-
+          {activeTab === 'library' && editing.id && <ProjectLibraryTab projectId={editing.id} />}
+          {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
-            <ProjectHistoryTab
-              projectId={editing.id}
-              setActiveSessionId={setActiveSessionId}
-              setView={setView}
-              onClose={() => setEditing(null)}
-            />
+            <ProjectHistoryTab projectId={editing.id} setActiveSessionId={setActiveSessionId}
+              setView={setView} onClose={() => setEditing(null)} />
           )}
-
           {activeTab !== 'memories' && activeTab !== 'history' && (
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
               <button className='btn btn-primary' onClick={save}>Save</button>
@@ -655,7 +649,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                     </span>
                   )}
                 </div>
-                <div className='card-meta'>{p.description?.slice(0, 100)}</div>
+                {p.description && (
+                  <div className='card-meta'>{p.description.slice(0, 100)}</div>
+                )}
+                <CountBar projectId={p.id} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
                 <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(p)}>Edit</button>
@@ -677,7 +674,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
                     <div className='card-title'>{sp.name}</div>
                   </div>
-                  <div className='card-meta'>{sp.description?.slice(0, 100)}</div>
+                  {sp.description && (
+                    <div className='card-meta'>{sp.description.slice(0, 100)}</div>
+                  )}
+                  <CountBar projectId={sp.id} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
                   <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(sp)}>Edit</button>
