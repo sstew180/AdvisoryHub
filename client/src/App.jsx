@@ -25,7 +25,13 @@ export default function App() {
   }, []);
 
   if (loading) return <div style={{ padding: 40, color: 'var(--text-muted)' }}>Loading...</div>;
-  if (!session) return <Auth />;
+
+  if (!session) return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', background: 'var(--bg)' }}>
+      <Auth />
+    </div>
+  );
 
   return (
     <>
