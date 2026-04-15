@@ -40,7 +40,7 @@ function groupSessions(sessions) {
   return order.map(g => ({ label: g, sessions: groups[g] }));
 }
 
-export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, isOpen, onClose }) {
+export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
   const [projectFilter, setProjectFilter] = useState('all');
@@ -61,6 +61,12 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .then(({ data }) => { if (data) setProjects(data); });
   }, [session, activeSessionId]);
 
+  // Keep filter pill in sync when activeProject changes externally
+  useEffect(() => {
+    if (!activeProject) setProjectFilter('all');
+    else setProjectFilter(activeProject.id);
+  }, [activeProject]);
+
   const handleNav = (id) => {
     if (id === 'chat') { setActiveSessionId(null); setView('chat'); }
     else setView(id);
@@ -71,6 +77,16 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     setActiveSessionId(id);
     setView('chat');
     onClose && onClose();
+  };
+
+  const handleProjectPill = (projectId) => {
+    setProjectFilter(projectId);
+    if (projectId === 'all' || projectId === 'none') {
+      setActiveProject(null);
+    } else {
+      const fullProject = projects.find(p => p.id === projectId);
+      if (fullProject) setActiveProject(fullProject);
+    }
   };
 
   const topLevel = projects.filter(p => !p.parent_id);
@@ -105,26 +121,26 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
         <div className='project-filter'>
           <button
             className={`project-filter-pill ${projectFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setProjectFilter('all')}>
+            onClick={() => handleProjectPill('all')}>
             All
           </button>
           <button
             className={`project-filter-pill ${projectFilter === 'none' ? 'active' : ''}`}
-            onClick={() => setProjectFilter('none')}>
+            onClick={() => handleProjectPill('none')}>
             No project
           </button>
           {topLevel.map(p => (
             <div key={p.id} style={{ display: 'contents' }}>
               <button
                 className={`project-filter-pill ${projectFilter === p.id ? 'active' : ''}`}
-                onClick={() => setProjectFilter(p.id)}>
+                onClick={() => handleProjectPill(p.id)}>
                 {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
               </button>
               {subProjects.filter(sp => sp.parent_id === p.id).map(sp => (
                 <button
                   key={sp.id}
                   className={`project-filter-pill project-filter-pill-sub ${projectFilter === sp.id ? 'active' : ''}`}
-                  onClick={() => setProjectFilter(sp.id)}>
+                  onClick={() => handleProjectPill(sp.id)}>
                   ↳ {sp.name.length > 15 ? sp.name.slice(0, 15) + '…' : sp.name}
                 </button>
               ))}

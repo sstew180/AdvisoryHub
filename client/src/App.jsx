@@ -38,7 +38,7 @@ export default function App() {
       <Sidebar
         view={view} setView={setView} session={session}
         activeSessionId={activeSessionId} setActiveSessionId={setActiveSessionId}
-        activeProject={activeProject}
+        activeProject={activeProject} setActiveProject={setActiveProject}
         isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}
       />
       <div className='main'>
