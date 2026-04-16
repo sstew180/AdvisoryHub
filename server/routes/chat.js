@@ -314,22 +314,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     });
     const userDocs = userDocsRaw || [];
 
-    let projectDocs = [];
-    if (projectId) {
-      const { data } = await supabase.rpc('match_documents', {
-        query_embedding: queryEmbedding, match_project_id: projectId, match_threshold: 0.7, match_count: 3
-      });
-      projectDocs = data || [];
-    }
-
-    let parentDocs = [];
-    if (parentProject) {
-      const { data } = await supabase.rpc('match_documents', {
-        query_embedding: queryEmbedding, match_project_id: parentProject.id, match_threshold: 0.7, match_count: 2
-      });
-      parentDocs = data || [];
-    }
-
     const isGuided = mode !== 'direct';
     const profileRules = profile?.prompt_rules || [];
     const projectRules = project?.prompt_rules || [];
@@ -343,7 +327,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     console.log('Library docs:', resolvedLibraryDocs.map(d => d.title));
     console.log('Skills:', skillDocs.map(d => d.title));
     console.log('User docs:', userDocs.map(d => d.filename));
-    console.log('Project docs:', projectDocs.map(d => d.filename));
     console.log('Attached file:', attachedFileName || 'none');
     console.log('Auto-capture:', capturedNote || 'none');
     console.log('-------------------');
@@ -351,7 +334,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const systemPrompt = buildSystemPrompt(
       profile, project, parentProject, memories, recentSessions,
       resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
-      userDocs, projectDocs, parentDocs, isGuided, profileRules, mergedProjectRules,
+      userDocs, isGuided, profileRules, mergedProjectRules,
       ruleOverrides, formatControls
     );
 
@@ -378,7 +361,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, userDocs, projectDocs, parentDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
+function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, userDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
 
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -464,16 +447,6 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
   if (userDocs && userDocs.length > 0) {
     p += '\n\n## My Documents';
     userDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
-  }
-
-  if (projectDocs && projectDocs.length > 0) {
-    p += '\n\n## ' + (parentProject ? 'Sub-project Documents' : 'Project Documents');
-    projectDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
-  }
-
-  if (parentDocs && parentDocs.length > 0) {
-    p += '\n\n## Parent Project Documents';
-    parentDocs.forEach(d => { p += '\n\n### ' + d.filename + '\n' + d.content.slice(0, 8000); });
   }
 
   return p;
