@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 const mammoth = require('mammoth');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
@@ -133,8 +133,16 @@ function sendStatus(res, message) {
 async function extractFileText(file) {
   try {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
-      const data = await pdfParse(file.buffer);
-      return data.text || '';
+      const uint8Array = new Uint8Array(file.buffer);
+      const pdf = await pdfjsLib.getDocument({ data: uint8Array }).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const text = content.items.map(item => item.str).join(' ');
+        pages.push(text);
+      }
+      return pages.join('\n\n');
     } else if (
       file.mimetype.includes('wordprocessingml') ||
       file.originalname.toLowerCase().endsWith('.docx')
