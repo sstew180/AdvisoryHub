@@ -36,7 +36,8 @@ export default function LibraryPage({ session, onMenuOpen }) {
     loadDocs();
     supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
       .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
-    supabase.from('projects').select('id, name, parent_id').eq('user_id', session.user.id).order('name')
+    supabase.from('projects').select('id, name, parent_id').eq('user_id', session.user.id)
+      .is('archived_at', null).order('name')
       .then(({ data }) => { if (data) setProjects(data); });
   }, []);
 
@@ -44,24 +45,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
     setFilter(cat);
     setShowUpload(false);
     setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', selectedProjectIds: [] });
-  };
-
-  const toggleProjectSelection = (id) => {
-    setForm(f => ({
-      ...f,
-      selectedProjectIds: f.selectedProjectIds.includes(id)
-        ? f.selectedProjectIds.filter(pid => pid !== id)
-        : [...f.selectedProjectIds, id],
-    }));
-  };
-
-  const toggleEditProjectSelection = (id) => {
-    setEditForm(f => ({
-      ...f,
-      selectedProjectIds: f.selectedProjectIds.includes(id)
-        ? f.selectedProjectIds.filter(pid => pid !== id)
-        : [...f.selectedProjectIds, id],
-    }));
   };
 
   const openEdit = (doc) => {
@@ -163,33 +146,82 @@ export default function LibraryPage({ session, onMenuOpen }) {
   };
 
   const topLevelProjects = projects.filter(p => !p.parent_id);
-  const subProjects = projects.filter(p => p.parent_id);
-  const projectOptions = [];
-  topLevelProjects.forEach(p => {
-    projectOptions.push({ id: p.id, label: p.name, indent: false });
-    subProjects.filter(sp => sp.parent_id === p.id).forEach(sp => {
-      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name, indent: true });
-    });
-  });
-  subProjects.filter(sp => !topLevelProjects.find(p => p.id === sp.parent_id)).forEach(sp => {
-    projectOptions.push({ id: sp.id, label: sp.name, indent: false });
+  const subProjectsMap = {};
+  projects.filter(p => p.parent_id).forEach(sp => {
+    if (!subProjectsMap[sp.parent_id]) subProjectsMap[sp.parent_id] = [];
+    subProjectsMap[sp.parent_id].push(sp);
   });
 
   const projectNameMap = {};
   projects.forEach(p => { projectNameMap[p.id] = p.name; });
 
-  const ProjectCheckboxList = ({ selectedIds, onToggle }) => (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
-      {projectOptions.map(p => (
-        <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer',
-          paddingLeft: p.indent ? 16 : 0, fontSize: 13, color: 'var(--text-primary)' }}>
-          <input type='checkbox' checked={selectedIds.includes(p.id)} onChange={() => onToggle(p.id)}
-            style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
-          {p.label}
-        </label>
-      ))}
-    </div>
-  );
+  // Expandable project checkbox list -- collapsed sub-projects by default
+  const ProjectCheckboxList = ({ selectedIds, onToggle }) => {
+    const [expandedParents, setExpandedParents] = useState({});
+    const toggleParent = (id) => setExpandedParents(e => ({ ...e, [id]: !e[id] }));
+
+    return (
+      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', maxHeight: 200, overflowY: 'auto' }}>
+        {topLevelProjects.map(p => {
+          const subs = subProjectsMap[p.id] || [];
+          const isExpanded = !!expandedParents[p.id];
+          const subSelectedCount = subs.filter(sp => selectedIds.includes(sp.id)).length;
+          return (
+            <div key={p.id}>
+              {/* Top-level project row */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px',
+                borderBottom: isExpanded && subs.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                {subs.length > 0 && (
+                  <button onClick={() => toggleParent(p.id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 9,
+                      color: 'var(--text-muted)', padding: '0 6px 0 0', lineHeight: 1, flexShrink: 0,
+                      transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+                    ▶
+                  </button>
+                )}
+                {subs.length === 0 && <div style={{ width: 15, flexShrink: 0 }} />}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                  flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>
+                  <input type='checkbox' checked={selectedIds.includes(p.id)} onChange={() => onToggle(p.id)}
+                    style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
+                  {p.name}
+                  {subs.length > 0 && !isExpanded && subSelectedCount > 0 && (
+                    <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 4 }}>
+                      +{subSelectedCount} sub
+                    </span>
+                  )}
+                </label>
+              </div>
+              {/* Sub-projects -- shown when expanded */}
+              {isExpanded && subs.map((sp, i) => (
+                <div key={sp.id} style={{ display: 'flex', alignItems: 'center', padding: '5px 12px 5px 28px',
+                  background: 'var(--surface)',
+                  borderBottom: i < subs.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 6 }}>↳</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    flex: 1, fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <input type='checkbox' checked={selectedIds.includes(sp.id)} onChange={() => onToggle(sp.id)}
+                      style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
+                    {sp.name}
+                  </label>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        {topLevelProjects.length === 0 && (
+          <div style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text-muted)' }}>
+            No projects yet.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const selectedCountLabel = (selectedIds) => {
+    if (selectedIds.length === 0) return { text: 'No projects selected -- document will be global', color: 'var(--text-muted)' };
+    return { text: `Linked to ${selectedIds.length} project${selectedIds.length !== 1 ? 's' : ''}`, color: 'var(--accent)' };
+  };
 
   return (
     <div className='page'>
@@ -283,17 +315,20 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
               </div>
-              {projectOptions.length > 0 && (
+              {topLevelProjects.length > 0 && (
                 <div className='form-group'>
                   <label className='form-label'>Linked projects (leave unchecked for global)</label>
                   <ProjectCheckboxList
                     selectedIds={editForm.selectedProjectIds}
-                    onToggle={toggleEditProjectSelection}
+                    onToggle={(id) => setEditForm(f => ({
+                      ...f,
+                      selectedProjectIds: f.selectedProjectIds.includes(id)
+                        ? f.selectedProjectIds.filter(pid => pid !== id)
+                        : [...f.selectedProjectIds, id],
+                    }))}
                   />
-                  <div style={{ fontSize: 11, color: editForm.selectedProjectIds.length > 0 ? 'var(--accent)' : 'var(--text-muted)', marginTop: 4 }}>
-                    {editForm.selectedProjectIds.length === 0
-                      ? 'No projects selected -- document will be global'
-                      : `Linked to ${editForm.selectedProjectIds.length} project${editForm.selectedProjectIds.length !== 1 ? 's' : ''}`}
+                  <div style={{ fontSize: 11, marginTop: 4, color: selectedCountLabel(editForm.selectedProjectIds).color }}>
+                    {selectedCountLabel(editForm.selectedProjectIds).text}
                   </div>
                 </div>
               )}
@@ -358,17 +393,20 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
               </div>
-              {projectOptions.length > 0 && (
+              {topLevelProjects.length > 0 && (
                 <div className='form-group'>
                   <label className='form-label'>Scope to projects (leave unchecked for global)</label>
                   <ProjectCheckboxList
                     selectedIds={form.selectedProjectIds}
-                    onToggle={toggleProjectSelection}
+                    onToggle={(id) => setForm(f => ({
+                      ...f,
+                      selectedProjectIds: f.selectedProjectIds.includes(id)
+                        ? f.selectedProjectIds.filter(pid => pid !== id)
+                        : [...f.selectedProjectIds, id],
+                    }))}
                   />
-                  <div style={{ fontSize: 11, color: form.selectedProjectIds.length > 0 ? 'var(--accent)' : 'var(--text-muted)', marginTop: 4 }}>
-                    {form.selectedProjectIds.length === 0
-                      ? 'No projects selected -- document will be global'
-                      : `Linked to ${form.selectedProjectIds.length} project${form.selectedProjectIds.length !== 1 ? 's' : ''}`}
+                  <div style={{ fontSize: 11, marginTop: 4, color: selectedCountLabel(form.selectedProjectIds).color }}>
+                    {selectedCountLabel(form.selectedProjectIds).text}
                   </div>
                 </div>
               )}
