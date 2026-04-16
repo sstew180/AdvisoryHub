@@ -244,14 +244,12 @@ router.post('/', upload.single('file'), async (req, res) => {
       .eq('user_id', userId).not('summary', 'is', null)
       .order('created_at', { ascending: false }).limit(5);
 
-    // Build active project IDs for scoped library retrieval
     const activeProjectIds = [
       ...(projectId ? [projectId] : []),
       ...(parentProject ? [parentProject.id] : []),
     ];
 
     sendStatus(res, 'Fetching relevant frameworks');
-    // Use updated match_library RPC with filter_project_ids to get both global and project-scoped docs
     const { data: allLibraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding,
       match_threshold: 0.7,
@@ -262,13 +260,11 @@ router.post('/', upload.single('file'), async (req, res) => {
       d => !['Skills', 'Templates', 'Organisation'].includes(d.category)
     );
 
-    // Fetch project-scoped Skills, Templates, Org via junction table
     let projectLibrarySkills = [];
     let projectLibraryTemplates = [];
     let projectLibraryOrg = [];
 
     if (activeProjectIds.length > 0 && mode !== 'direct') {
-      // Get document IDs linked to active projects via junction table
       const { data: junctionLinks } = await supabase
         .from('library_document_projects')
         .select('document_id')
@@ -296,7 +292,6 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     if (mode !== 'direct') {
       sendStatus(res, 'Loading skills and templates');
-      // Global skills/templates/org = those with no junction table entries
       const [skillRes, templateRes, orgRes] = await Promise.all([
         supabase.from('library_documents').select('id, title, content')
           .eq('category', 'Skills').eq('default_enabled', true).is('project_id', null),
@@ -305,7 +300,6 @@ router.post('/', upload.single('file'), async (req, res) => {
         supabase.from('library_documents').select('id, title, content')
           .eq('category', 'Organisation').eq('default_enabled', true).is('project_id', null),
       ]);
-      // Filter to only those with no junction links (truly global)
       const allSkills = skillRes.data || [];
       const allTemplates = templateRes.data || [];
       const allOrg = orgRes.data || [];
@@ -407,7 +401,6 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     if (profile.organisation) p += '\nOrganisation: ' + profile.organisation;
     if (profile.goals) p += '\nCurrent objectives: ' + profile.goals;
     if (profile.preferences && isGuided) p += '\nCommunication style: ' + profile.preferences;
-    if (profile.artefact_preference) p += '\nDefault output format: ' + profile.artefact_preference;
     if (profile.high_scrutiny) p += '\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.';
   }
 
@@ -429,7 +422,6 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
     if (project.description) p += '\n' + project.description;
     if (project.objectives) p += '\nObjectives: ' + project.objectives;
     if (project.custom_instructions) p += '\nProject instructions: ' + project.custom_instructions;
-    if (project.artefact_preference) p += '\nProject output format: ' + project.artefact_preference;
     if (project.high_scrutiny) p += '\n\nHIGH SCRUTINY MODE (project): Flag all assumptions. Recommend verification.';
   }
 
