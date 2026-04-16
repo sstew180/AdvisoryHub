@@ -44,6 +44,7 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
   const [projectFilter, setProjectFilter] = useState('all');
+  const [expandedProjectId, setExpandedProjectId] = useState(null);
 
   useEffect(() => {
     if (!session) return;
@@ -59,8 +60,20 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   }, [session, activeSessionId]);
 
   useEffect(() => {
-    if (!activeProject) setProjectFilter('all');
-    else setProjectFilter(activeProject.id);
+    if (!activeProject) {
+      setProjectFilter('all');
+      setExpandedProjectId(null);
+    } else {
+      setProjectFilter(activeProject.id);
+      // If active project is a sub-project, expand its parent
+      const isSubProject = subProjects.some(sp => sp.id === activeProject.id);
+      if (isSubProject) {
+        const parent = projects.find(p => p.id === activeProject.parent_id);
+        if (parent) setExpandedProjectId(parent.id);
+      } else {
+        setExpandedProjectId(activeProject.id);
+      }
+    }
   }, [activeProject]);
 
   const handleNav = (id) => {
@@ -78,25 +91,35 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
 
-  const handleProjectPill = (projectId) => {
-    setProjectFilter(projectId);
+  const handleTopLevelPill = (projectId) => {
     if (projectId === 'all' || projectId === 'none') {
+      setProjectFilter(projectId);
+      setExpandedProjectId(null);
       setActiveProject(null);
       return;
     }
     const fullProject = projects.find(p => p.id === projectId);
+    // If already active and expanded -- collapse
+    if (projectFilter === projectId && expandedProjectId === projectId) {
+      setExpandedProjectId(null);
+    } else {
+      setExpandedProjectId(projectId);
+    }
+    setProjectFilter(projectId);
+    if (fullProject) setActiveProject(fullProject);
+  };
+
+  const handleSubProjectPill = (subProjectId) => {
+    const fullProject = projects.find(p => p.id === subProjectId);
+    setProjectFilter(subProjectId);
     if (fullProject) setActiveProject(fullProject);
   };
 
   const filteredSessions = sessions.filter(s => {
     if (projectFilter === 'all') return true;
     if (projectFilter === 'none') return !s.project_id;
-
-    // Check if the filter is a sub-project -- show only that sub-project's sessions
     const filterIsSubProject = subProjects.some(sp => sp.id === projectFilter);
     if (filterIsSubProject) return s.project_id === projectFilter;
-
-    // Filter is a top-level project -- show sessions from it AND all its sub-projects
     if (s.project_id === projectFilter) return true;
     const sub = subProjects.find(sp => sp.id === s.project_id);
     return sub?.parent_id === projectFilter;
@@ -123,30 +146,40 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
         <div className='project-filter'>
           <button
             className={`project-filter-pill ${projectFilter === 'all' ? 'active' : ''}`}
-            onClick={() => handleProjectPill('all')}>
+            onClick={() => handleTopLevelPill('all')}>
             All
           </button>
           <button
             className={`project-filter-pill ${projectFilter === 'none' ? 'active' : ''}`}
-            onClick={() => handleProjectPill('none')}>
+            onClick={() => handleTopLevelPill('none')}>
             No project
           </button>
-          {topLevel.map(p => (
-            <div key={p.id} style={{ display: 'contents' }}>
-              <button
-                className={`project-filter-pill ${projectFilter === p.id ? 'active' : ''}`}
-                onClick={() => handleProjectPill(p.id)}>
-                {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
-              </button>
-              {subProjects.filter(sp => sp.parent_id === p.id).map(sp => (
-                <button key={sp.id}
-                  className={`project-filter-pill project-filter-pill-sub ${projectFilter === sp.id ? 'active' : ''}`}
-                  onClick={() => handleProjectPill(sp.id)}>
-                  ↳ {sp.name.length > 15 ? sp.name.slice(0, 15) + '…' : sp.name}
+          {topLevel.map(p => {
+            const subs = subProjects.filter(sp => sp.parent_id === p.id);
+            const isExpanded = expandedProjectId === p.id;
+            const isActive = projectFilter === p.id;
+            return (
+              <div key={p.id} style={{ display: 'contents' }}>
+                <button
+                  className={`project-filter-pill ${isActive ? 'active' : ''}`}
+                  onClick={() => handleTopLevelPill(p.id)}>
+                  {p.name.length > 16 ? p.name.slice(0, 16) + '…' : p.name}
+                  {subs.length > 0 && (
+                    <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>
+                      {isExpanded ? '▲' : '▼'}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
-          ))}
+                {isExpanded && subs.map(sp => (
+                  <button key={sp.id}
+                    className={`project-filter-pill project-filter-pill-sub ${projectFilter === sp.id ? 'active' : ''}`}
+                    onClick={() => handleSubProjectPill(sp.id)}>
+                    ↳ {sp.name.length > 14 ? sp.name.slice(0, 14) + '…' : sp.name}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
         <div className='sidebar-sessions'>
           {groups.map(group => (
@@ -155,7 +188,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
               {group.sessions.map(s => (
                 <div key={s.id}
                   className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                  title={(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   onClick={() => handleSession(s.id)}>
                   <span className='session-tooltip'>
                     {(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
