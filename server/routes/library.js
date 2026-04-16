@@ -38,7 +38,6 @@ function extractPdfText(buffer) {
 // Returns all library documents with their linked project IDs
 router.get('/', async (req, res) => {
   try {
-    // Fetch all documents
     const { data: docs, error } = await supabase
       .from('library_documents')
       .select('id, title, category, domain, jurisdiction, description, source_url, default_enabled, project_id')
@@ -46,7 +45,6 @@ router.get('/', async (req, res) => {
 
     if (error) throw error;
 
-    // Fetch all junction table entries
     const docIds = (docs || []).map(d => d.id);
     let projectLinks = [];
     if (docIds.length > 0) {
@@ -57,15 +55,11 @@ router.get('/', async (req, res) => {
       projectLinks = links || [];
     }
 
-    // Attach project_ids array to each document
     const result = (docs || []).map(d => {
       const linked = projectLinks
         .filter(l => l.document_id === d.id)
         .map(l => l.project_id);
-      return {
-        ...d,
-        project_ids: linked,
-      };
+      return { ...d, project_ids: linked };
     });
 
     res.json(result);
@@ -76,11 +70,9 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/library/upload
-// Uploads a document and links it to zero or more projects via junction table
 router.post('/upload', upload.single('file'), async (req, res) => {
   const { title, category, domain, jurisdiction, description, sourceUrl } = req.body;
 
-  // projectIds can be a single string or an array
   let projectIds = req.body.projectIds || req.body['projectIds[]'] || [];
   if (typeof projectIds === 'string') projectIds = [projectIds];
   projectIds = projectIds.filter(Boolean);
@@ -99,15 +91,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     const embedding = await embed(content);
 
-    // Insert document -- project_id column left null (junction table handles linking)
     const { data: doc, error } = await supabase
       .from('library_documents')
       .insert({
-        title,
-        category,
+        title, category,
         domain: domain || 'Risk & Audit',
-        jurisdiction,
-        description,
+        jurisdiction, description,
         content: content.slice(0, 50000),
         source_url: sourceUrl || null,
         project_id: null,
@@ -118,15 +107,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     if (error) throw error;
 
-    // Insert junction table rows for each project
     if (projectIds.length > 0) {
-      const links = projectIds.map(pid => ({
-        document_id: doc.id,
-        project_id: pid,
-      }));
-      const { error: linkError } = await supabase
-        .from('library_document_projects')
-        .insert(links);
+      const links = projectIds.map(pid => ({ document_id: doc.id, project_id: pid }));
+      const { error: linkError } = await supabase.from('library_document_projects').insert(links);
       if (linkError) console.error('Junction insert error:', linkError);
     }
 
@@ -137,12 +120,52 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
+// PATCH /api/library/:id
+// Updates document metadata and replaces project links
+router.patch('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, jurisdiction, description, sourceUrl, projectIds } = req.body;
+
+  try {
+    // Update document metadata
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (jurisdiction !== undefined) updates.jurisdiction = jurisdiction;
+    if (description !== undefined) updates.description = description;
+    if (sourceUrl !== undefined) updates.source_url = sourceUrl;
+
+    if (Object.keys(updates).length > 0) {
+      const { error } = await supabase
+        .from('library_documents')
+        .update(updates)
+        .eq('id', id);
+      if (error) throw error;
+    }
+
+    // Replace junction table entries
+    if (projectIds !== undefined) {
+      // Delete existing links
+      await supabase.from('library_document_projects').delete().eq('document_id', id);
+
+      // Insert new links
+      const ids = Array.isArray(projectIds) ? projectIds.filter(Boolean) : [];
+      if (ids.length > 0) {
+        const links = ids.map(pid => ({ document_id: id, project_id: pid }));
+        const { error: linkError } = await supabase.from('library_document_projects').insert(links);
+        if (linkError) throw linkError;
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Library PATCH error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/library/:id
 router.delete('/:id', async (req, res) => {
-  const { error } = await supabase
-    .from('library_documents')
-    .delete()
-    .eq('id', req.params.id);
+  const { error } = await supabase.from('library_documents').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });

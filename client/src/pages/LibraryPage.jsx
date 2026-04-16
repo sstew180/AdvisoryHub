@@ -20,6 +20,9 @@ export default function LibraryPage({ session, onMenuOpen }) {
   const [docContent, setDocContent] = useState('');
   const [loadingContent, setLoadingContent] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [editForm, setEditForm] = useState({ title: '', jurisdiction: '', description: '', sourceUrl: '', selectedProjectIds: [] });
+  const [saving, setSaving] = useState(false);
 
   const loadDocs = () => {
     setLoading(true);
@@ -52,6 +55,45 @@ export default function LibraryPage({ session, onMenuOpen }) {
     }));
   };
 
+  const toggleEditProjectSelection = (id) => {
+    setEditForm(f => ({
+      ...f,
+      selectedProjectIds: f.selectedProjectIds.includes(id)
+        ? f.selectedProjectIds.filter(pid => pid !== id)
+        : [...f.selectedProjectIds, id],
+    }));
+  };
+
+  const openEdit = (doc) => {
+    setEditingDoc(doc);
+    setEditForm({
+      title: doc.title || '',
+      jurisdiction: doc.jurisdiction || '',
+      description: doc.description || '',
+      sourceUrl: doc.source_url || '',
+      selectedProjectIds: doc.project_ids || [],
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editingDoc) return;
+    setSaving(true);
+    try {
+      await axios.patch(API + '/api/library/' + editingDoc.id, {
+        title: editForm.title,
+        jurisdiction: editForm.jurisdiction,
+        description: editForm.description,
+        sourceUrl: editForm.sourceUrl,
+        projectIds: editForm.selectedProjectIds,
+      });
+      setEditingDoc(null);
+      loadDocs();
+    } catch {
+      setError('Save failed. Please try again.');
+    }
+    setSaving(false);
+  };
+
   const upload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setUploading(true);
@@ -62,7 +104,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
     fd.append('jurisdiction', form.jurisdiction);
     if (form.description) fd.append('description', form.description);
     if (form.sourceUrl) fd.append('sourceUrl', form.sourceUrl);
-    // Send each selected project ID
     form.selectedProjectIds.forEach(pid => fd.append('projectIds[]', pid));
     fd.append('file', file);
     try {
@@ -121,7 +162,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
     return colours[cat] || { bg: '#f0f0ec', color: '#6b6b6b' };
   };
 
-  // Build grouped project list for multi-select
   const topLevelProjects = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
   const projectOptions = [];
@@ -135,9 +175,21 @@ export default function LibraryPage({ session, onMenuOpen }) {
     projectOptions.push({ id: sp.id, label: sp.name, indent: false });
   });
 
-  // Build a lookup map for project names
   const projectNameMap = {};
   projects.forEach(p => { projectNameMap[p.id] = p.name; });
+
+  const ProjectCheckboxList = ({ selectedIds, onToggle }) => (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
+      {projectOptions.map(p => (
+        <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer',
+          paddingLeft: p.indent ? 16 : 0, fontSize: 13, color: 'var(--text-primary)' }}>
+          <input type='checkbox' checked={selectedIds.includes(p.id)} onChange={() => onToggle(p.id)}
+            style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
+          {p.label}
+        </label>
+      ))}
+    </div>
+  );
 
   return (
     <div className='page'>
@@ -192,6 +244,70 @@ export default function LibraryPage({ session, onMenuOpen }) {
         </div>
       )}
 
+      {/* Edit modal */}
+      {editingDoc && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setEditingDoc(null)}>
+          <div style={{ background: 'var(--bg)', borderRadius: 8, maxWidth: 560, width: '100%',
+            maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>Edit document</div>
+              <button onClick={() => setEditingDoc(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20,
+                  color: 'var(--text-muted)', padding: '0 4px', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Title</label>
+                  <input className='form-input' value={editForm.title}
+                    onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Jurisdiction</label>
+                  <input className='form-input' value={editForm.jurisdiction}
+                    onChange={e => setEditForm(f => ({ ...f, jurisdiction: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Source URL (optional)</label>
+                  <input className='form-input' value={editForm.sourceUrl}
+                    onChange={e => setEditForm(f => ({ ...f, sourceUrl: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0, gridColumn: '1 / -1' }}>
+                  <label className='form-label'>Description (optional)</label>
+                  <input className='form-input' value={editForm.description}
+                    onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+              </div>
+              {projectOptions.length > 0 && (
+                <div className='form-group'>
+                  <label className='form-label'>Linked projects (leave unchecked for global)</label>
+                  <ProjectCheckboxList
+                    selectedIds={editForm.selectedProjectIds}
+                    onToggle={toggleEditProjectSelection}
+                  />
+                  <div style={{ fontSize: 11, color: editForm.selectedProjectIds.length > 0 ? 'var(--accent)' : 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.selectedProjectIds.length === 0
+                      ? 'No projects selected -- document will be global'
+                      : `Linked to ${editForm.selectedProjectIds.length} project${editForm.selectedProjectIds.length !== 1 ? 's' : ''}`}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
+              <button className='btn btn-primary' onClick={saveEdit} disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button className='btn btn-secondary' onClick={() => setEditingDoc(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Category tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {CATS.map(c => (
@@ -206,7 +322,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
         ))}
       </div>
 
-      {/* Upload button -- only on specific category tabs for admins */}
+      {/* Upload button */}
       {isAdmin && filter !== 'All' && (
         <div style={{ marginBottom: 20 }}>
           {!showUpload ? (
@@ -242,38 +358,20 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
               </div>
-
-              {/* Project scope -- multi-select checkboxes */}
               {projectOptions.length > 0 && (
                 <div className='form-group'>
                   <label className='form-label'>Scope to projects (leave unchecked for global)</label>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
-                    {projectOptions.map(p => (
-                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer',
-                        paddingLeft: p.indent ? 16 : 0, fontSize: 13, color: 'var(--text-primary)' }}>
-                        <input
-                          type='checkbox'
-                          checked={form.selectedProjectIds.includes(p.id)}
-                          onChange={() => toggleProjectSelection(p.id)}
-                          style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
-                        />
-                        {p.label}
-                      </label>
-                    ))}
+                  <ProjectCheckboxList
+                    selectedIds={form.selectedProjectIds}
+                    onToggle={toggleProjectSelection}
+                  />
+                  <div style={{ fontSize: 11, color: form.selectedProjectIds.length > 0 ? 'var(--accent)' : 'var(--text-muted)', marginTop: 4 }}>
+                    {form.selectedProjectIds.length === 0
+                      ? 'No projects selected -- document will be global'
+                      : `Linked to ${form.selectedProjectIds.length} project${form.selectedProjectIds.length !== 1 ? 's' : ''}`}
                   </div>
-                  {form.selectedProjectIds.length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                      No projects selected -- document will be global
-                    </div>
-                  )}
-                  {form.selectedProjectIds.length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>
-                      Linked to {form.selectedProjectIds.length} project{form.selectedProjectIds.length !== 1 ? 's' : ''}
-                    </div>
-                  )}
                 </div>
               )}
-
               <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
                 {uploading ? 'Uploading and embedding...' : 'Choose file and upload'}
                 <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
@@ -295,7 +393,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
       {!loading && !error && filtered.map(d => {
         const badge = categoryBadgeStyle(d.category);
         const isAutoInjected = ['Skills', 'Templates', 'Organisation'].includes(d.category);
-        // project_ids comes from the updated GET route via junction table
         const linkedProjectIds = d.project_ids || [];
         const isGlobal = linkedProjectIds.length === 0;
 
@@ -343,11 +440,15 @@ export default function LibraryPage({ session, onMenuOpen }) {
                 <button onClick={() => viewDoc(d)} className='btn btn-secondary'
                   style={{ fontSize: 12, padding: '4px 10px' }}>View</button>
                 {isAdmin && (
-                  <button onClick={() => deleteDoc(d.id)} disabled={deletingId === d.id}
-                    className='btn btn-danger' style={{ fontSize: 12, padding: '4px 10px',
-                      opacity: deletingId === d.id ? 0.5 : 1 }}>
-                    {deletingId === d.id ? '...' : 'Delete'}
-                  </button>
+                  <>
+                    <button onClick={() => openEdit(d)} className='btn btn-secondary'
+                      style={{ fontSize: 12, padding: '4px 10px' }}>Edit</button>
+                    <button onClick={() => deleteDoc(d.id)} disabled={deletingId === d.id}
+                      className='btn btn-danger' style={{ fontSize: 12, padding: '4px 10px',
+                        opacity: deletingId === d.id ? 0.5 : 1 }}>
+                      {deletingId === d.id ? '...' : 'Delete'}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
