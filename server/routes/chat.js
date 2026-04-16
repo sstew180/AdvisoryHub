@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
 const multer = require('multer');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+const PDFParser = require('pdf2json');
 const mammoth = require('mammoth');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
@@ -130,25 +130,45 @@ function sendStatus(res, message) {
   res.write('data: ' + JSON.stringify({ status: message }) + '\n\n');
 }
 
+function extractPdfText(buffer) {
+  return new Promise((resolve) => {
+    try {
+      const pdfParser = new PDFParser(null, 1);
+      pdfParser.on('pdfParser_dataReady', (data) => {
+        try {
+          const text = data.Pages.map(page =>
+            page.Texts.map(t =>
+              t.R.map(r => decodeURIComponent(r.T)).join('')
+            ).join(' ')
+          ).join('\n\n');
+          resolve(text.trim().length > 0 ? text : null);
+        } catch (e) {
+          console.error('PDF text assembly error:', e.message);
+          resolve(null);
+        }
+      });
+      pdfParser.on('pdfParser_dataError', (err) => {
+        console.error('PDF parse error:', err.parserError);
+        resolve(null);
+      });
+      pdfParser.parseBuffer(buffer);
+    } catch (e) {
+      console.error('PDF parser init error:', e.message);
+      resolve(null);
+    }
+  });
+}
+
 async function extractFileText(file) {
   try {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
-      const uint8Array = new Uint8Array(file.buffer);
-      const pdf = await pdfjsLib.getDocument({ data: uint8Array }).promise;
-      const pages = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        const text = content.items.map(item => item.str).join(' ');
-        pages.push(text);
-      }
-      return pages.join('\n\n');
+      return await extractPdfText(file.buffer);
     } else if (
       file.mimetype.includes('wordprocessingml') ||
       file.originalname.toLowerCase().endsWith('.docx')
     ) {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
-      return result.value || '';
+      return result.value || null;
     } else {
       return file.buffer.toString('utf-8');
     }
@@ -159,7 +179,6 @@ async function extractFileText(file) {
 }
 
 router.post('/', upload.single('file'), async (req, res) => {
-  // When file is attached, body fields come from FormData
   const userId = req.body.userId;
   const sessionId = req.body.sessionId;
   const projectId = req.body.projectId || null;
@@ -173,29 +192,27 @@ router.post('/', upload.single('file'), async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    // If a file was attached, extract its text and prepend to the last user message
     let attachedFileName = null;
-if (req.file) {
-  sendStatus(res, 'Reading attached document');
-  const fileText = await extractFileText(req.file);
-  attachedFileName = req.file.originalname;
-  if (fileText && fileText.trim().length > 0) {
-    const truncated = fileText.slice(0, 40000);
-    const lastMsg = messages[messages.length - 1];
-    messages = [
-      ...messages.slice(0, -1),
-      {
-        role: 'user',
-        content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
-      },
-    ];
-    res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
-  } else {
-    // Extraction failed -- warn user and continue without file content
-    res.write('data: ' + JSON.stringify({ status: 'Could not extract text from ' + attachedFileName + ' -- continuing without it' }) + '\n\n');
-    attachedFileName = null;
-  }
-}
+    if (req.file) {
+      sendStatus(res, 'Reading attached document');
+      const fileText = await extractFileText(req.file);
+      attachedFileName = req.file.originalname;
+      if (fileText && fileText.trim().length > 0) {
+        const truncated = fileText.slice(0, 40000);
+        const lastMsg = messages[messages.length - 1];
+        messages = [
+          ...messages.slice(0, -1),
+          {
+            role: 'user',
+            content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
+          },
+        ];
+        res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
+      } else {
+        res.write('data: ' + JSON.stringify({ status: 'Could not extract text from ' + attachedFileName + ' -- continuing without it' }) + '\n\n');
+        attachedFileName = null;
+      }
+    }
 
     sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
