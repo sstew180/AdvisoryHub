@@ -67,13 +67,7 @@ async function generatePersonalisedPrompts(profile, activeProject) {
   if (!contextBlock.trim()) return null;
 
   const systemPrompt = 'You are AdvisoryHub, an AI advisory assistant for local government officers specialising in Risk, Audit, and Insurance in Queensland, Australia.';
-
-  const userPrompt = `Based on this user context, generate exactly 6 short, specific, actionable prompt suggestions the user might want to ask right now. Each suggestion should be a complete question or request, directly relevant to their role, objectives, or active project. Make them concrete and practical -- not generic.
-
-${contextBlock}
-
-Return a JSON array of exactly 6 strings. No other text, no markdown, no explanation. Example format:
-["Prompt one", "Prompt two", "Prompt three", "Prompt four", "Prompt five", "Prompt six"]`;
+  const userPrompt = `Based on this user context, generate exactly 6 short, specific, actionable prompt suggestions the user might want to ask right now. Each suggestion should be a complete question or request, directly relevant to their role, objectives, or active project. Make them concrete and practical -- not generic.\n\n${contextBlock}\n\nReturn a JSON array of exactly 6 strings. No other text, no markdown, no explanation. Example format:\n["Prompt one", "Prompt two", "Prompt three", "Prompt four", "Prompt five", "Prompt six"]`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -90,7 +84,6 @@ Return a JSON array of exactly 6 strings. No other text, no markdown, no explana
   const data = await response.json();
   const text = data.content?.[0]?.text?.trim();
   if (!text) return null;
-
   const clean = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
   const parsed = JSON.parse(clean);
   if (Array.isArray(parsed) && parsed.length === 6) return parsed;
@@ -112,13 +105,9 @@ function StatusCallout({ steps, visible }) {
 
   return (
     <div style={{
-      borderTop: '1px solid var(--border)',
-      borderBottom: '1px solid var(--border)',
-      background: 'var(--surface)',
-      padding: '10px 48px',
-      opacity,
-      transition: 'opacity 0.3s ease',
-      flexShrink: 0,
+      borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
+      background: 'var(--surface)', padding: '10px 48px',
+      opacity, transition: 'opacity 0.3s ease', flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, maxWidth: 800, margin: '0 auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4, flexShrink: 0 }}>
@@ -138,11 +127,9 @@ function StatusCallout({ steps, visible }) {
                 display: 'flex', alignItems: 'center', gap: 6,
               }}>
                 {i > 0 && (
-                  <span style={{
-                    width: 4, height: 4, borderRadius: '50%', flexShrink: 0,
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', flexShrink: 0,
                     background: i === steps.length - 1 ? 'var(--accent)' : 'var(--border)',
-                    display: 'inline-block',
-                  }} />
+                    display: 'inline-block' }} />
                 )}
                 {step}
               </div>
@@ -169,9 +156,7 @@ function EmptyState({ activeProject, onPromptClick, userId }) {
         .eq('id', userId).single();
       const result = await generatePersonalisedPrompts(profile || {}, activeProject);
       setPrompts(result);
-    } catch {
-      setPrompts(null);
-    }
+    } catch { setPrompts(null); }
     setLoading(false);
   }, [userId, activeProject?.id]);
 
@@ -185,15 +170,12 @@ function EmptyState({ activeProject, onPromptClick, userId }) {
         <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>AdvisoryHub</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
       </div>
-
       {loading ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[...Array(6)].map((_, i) => (
-            <div key={i} style={{
-              padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-              background: 'var(--surface)', height: 60,
-              animation: 'pulse 1.5s ease-in-out infinite',
-            }} />
+            <div key={i} style={{ padding: '12px 14px', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)', background: 'var(--surface)', height: 60,
+              animation: 'pulse 1.5s ease-in-out infinite' }} />
           ))}
         </div>
       ) : (
@@ -220,10 +202,7 @@ function EmptyState({ activeProject, onPromptClick, userId }) {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
-      `}</style>
+      <style>{`@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }`}</style>
     </div>
   );
 }
@@ -239,8 +218,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [statusSteps, setStatusSteps] = useState([]);
   const [statusVisible, setStatusVisible] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!activeSessionId) { setMessages([]); return; }
@@ -279,6 +260,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) setAttachedFile(file);
+    e.target.value = '';
+  };
+
+  const removeAttachment = () => setAttachedFile(null);
+
   const downloadSession = async () => {
     if (!activeSessionId || downloading) return;
     setDownloading(true);
@@ -310,7 +299,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
-    const userMsg = { role: 'user', content: text };
+    const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
     setMessages(prev => [...prev, userMsg]);
     setStreaming(true);
@@ -321,19 +310,40 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     let hasStartedText = false;
 
     const formatForThisSend = { ...formatControls };
+    const fileToSend = attachedFile;
     setFormatControls({ length: null, format: null, depth: null });
+    setAttachedFile(null);
 
     try {
-      const response = await fetch(API + '/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: session.user.id, sessionId,
-          projectId: activeProject?.id || null,
-          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
-          mode, ruleOverrides: {}, formatControls: formatForThisSend,
-        })
-      });
+      let response;
+      const msgPayload = [...messages, { role: 'user', content: text }]
+        .map(m => ({ role: m.role, content: m.content }));
+
+      if (fileToSend) {
+        // Send as FormData when file is attached
+        const fd = new FormData();
+        fd.append('userId', session.user.id);
+        fd.append('sessionId', sessionId);
+        fd.append('projectId', activeProject?.id || '');
+        fd.append('messages', JSON.stringify(msgPayload));
+        fd.append('mode', mode);
+        fd.append('ruleOverrides', JSON.stringify({}));
+        fd.append('formatControls', JSON.stringify(formatForThisSend));
+        fd.append('file', fileToSend);
+        response = await fetch(API + '/api/chat', { method: 'POST', body: fd });
+      } else {
+        response = await fetch(API + '/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: session.user.id, sessionId,
+            projectId: activeProject?.id || null,
+            messages: msgPayload,
+            mode, ruleOverrides: {}, formatControls: formatForThisSend,
+          })
+        });
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       while (true) {
@@ -347,6 +357,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             const parsed = JSON.parse(data);
             if (parsed.status) {
               setStatusSteps(prev => [...prev, parsed.status]);
+            } else if (parsed.attached) {
+              // File confirmed received by backend -- no UI action needed
             } else if (parsed.autocaptured) {
               setAutoCaptured(parsed.autocaptured);
               setTimeout(() => setAutoCaptured(null), 4000);
@@ -426,11 +438,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <div className='chat-area'>
         {messages.length === 0 && !streaming && (
-          <EmptyState
-            activeProject={activeProject}
-            onPromptClick={handlePromptClick}
-            userId={session.user.id}
-          />
+          <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} userId={session.user.id} />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
@@ -506,6 +514,24 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 </div>
               )}
             </div>
+
+            {/* Attachment preview */}
+            {attachedFile && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px',
+                borderBottom: '1px solid var(--border)', background: 'rgba(0,145,164,0.04)' }}>
+                <span style={{ fontSize: 14 }}>📎</span>
+                <span style={{ fontSize: 12, color: 'var(--accent)', flex: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {attachedFile.name}
+                </span>
+                <button onClick={removeAttachment}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
+                  ×
+                </button>
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               className='input-textarea'
@@ -516,9 +542,19 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
               rows={1}
             />
             <div className='input-footer'>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Paperclip button */}
+                <label title='Attach a document (PDF, DOCX, TXT)'
+                  style={{ cursor: 'pointer', color: attachedFile ? 'var(--accent)' : 'var(--text-muted)',
+                    fontSize: 16, display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
+                  📎
+                  <input ref={fileInputRef} type='file' style={{ display: 'none' }}
+                    accept='.pdf,.docx,.txt,.md' onChange={handleFileChange} />
+                </label>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
+                </span>
+              </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {messages.length > 0 && activeSessionId && (
                   <button onClick={downloadSession} disabled={downloading || streaming}

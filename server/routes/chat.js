@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
+const multer = require('multer');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const TRIGGER_PHRASES = [
   { prefix: 'remember that ', strip: 'remember that ' },
@@ -125,14 +130,52 @@ function sendStatus(res, message) {
   res.write('data: ' + JSON.stringify({ status: message }) + '\n\n');
 }
 
-router.post('/', async (req, res) => {
-  const { userId, sessionId, projectId, messages, mode, ruleOverrides, formatControls } = req.body;
+async function extractFileText(file) {
+  if (file.mimetype === 'application/pdf') {
+    const data = await pdfParse(file.buffer);
+    return data.text;
+  } else if (file.mimetype.includes('wordprocessingml') || file.originalname.endsWith('.docx')) {
+    const result = await mammoth.extractRawText({ buffer: file.buffer });
+    return result.value;
+  } else {
+    return file.buffer.toString('utf-8');
+  }
+}
+
+router.post('/', upload.single('file'), async (req, res) => {
+  // When file is attached, body fields come from FormData
+  const userId = req.body.userId;
+  const sessionId = req.body.sessionId;
+  const projectId = req.body.projectId || null;
+  const mode = req.body.mode;
+  const ruleOverrides = req.body.ruleOverrides ? JSON.parse(req.body.ruleOverrides) : {};
+  const formatControls = req.body.formatControls ? JSON.parse(req.body.formatControls) : {};
+  let messages = JSON.parse(req.body.messages);
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
   try {
+    // If a file was attached, extract its text and prepend to the last user message
+    let attachedFileName = null;
+    if (req.file) {
+      sendStatus(res, 'Reading attached document');
+      const fileText = await extractFileText(req.file);
+      attachedFileName = req.file.originalname;
+      const truncated = fileText.slice(0, 40000);
+      const lastMsg = messages[messages.length - 1];
+      messages = [
+        ...messages.slice(0, -1),
+        {
+          role: 'user',
+          content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
+        },
+      ];
+      // Send confirmation to frontend
+      res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
+    }
+
     sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
@@ -263,6 +306,7 @@ router.post('/', async (req, res) => {
     console.log('Skills:', skillDocs.map(d => d.title));
     console.log('User docs:', userDocs.map(d => d.filename));
     console.log('Project docs:', projectDocs.map(d => d.filename));
+    console.log('Attached file:', attachedFileName || 'none');
     console.log('Auto-capture:', capturedNote || 'none');
     console.log('-------------------');
 
