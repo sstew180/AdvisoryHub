@@ -224,7 +224,6 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
 export default function ProjectsPage({ session, activeProject, setActiveProject, setView, onMenuOpen, setActiveSessionId }) {
   const [projects, setProjects] = useState([]);
   const [editing, setEditing] = useState(null);
-  const [expanded, setExpanded] = useState({});
   const [activeTab, setActiveTab] = useState('details');
   const [projectCounts, setProjectCounts] = useState({});
 
@@ -238,12 +237,14 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
 
   const loadCounts = async (projectIds) => {
     if (!projectIds.length) return;
-    const [sessionsRes, memoriesRes] = await Promise.all([
+    const [sessionsRes, memoriesRes, docsRes] = await Promise.all([
       supabase.from('sessions').select('id, project_id').in('project_id', projectIds),
       supabase.from('session_embeddings').select('id, session_id').eq('user_id', session.user.id),
+      supabase.from('library_documents').select('id, project_id').in('project_id', projectIds),
     ]);
     const sessions = sessionsRes.data || [];
     const memories = memoriesRes.data || [];
+    const docs = docsRes.data || [];
     const sessionIdsByProject = {};
     for (const s of sessions) {
       if (!sessionIdsByProject[s.project_id]) sessionIdsByProject[s.project_id] = new Set();
@@ -253,7 +254,8 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     for (const pid of projectIds) {
       const sessionIds = sessionIdsByProject[pid] || new Set();
       const memCount = memories.filter(m => sessionIds.has(m.session_id)).length;
-      counts[pid] = { sessions: sessionIds.size, memories: memCount };
+      const docCount = docs.filter(d => d.project_id === pid).length;
+      counts[pid] = { sessions: sessionIds.size, memories: memCount, docs: docCount };
     }
     setProjectCounts(counts);
   };
@@ -271,21 +273,41 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     load();
   };
 
-  const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
-
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
   const topLevelOptions = projects.filter(p => !p.parent_id);
 
-  const CountBar = ({ projectId }) => {
+  const CountBar = ({ projectId, subCount }) => {
     const c = projectCounts[projectId];
     if (!c) return null;
     const parts = [];
     if (c.sessions > 0) parts.push(c.sessions + ' session' + (c.sessions !== 1 ? 's' : ''));
     if (c.memories > 0) parts.push(c.memories + ' memor' + (c.memories !== 1 ? 'ies' : 'y'));
+    if (c.docs > 0) parts.push(c.docs + ' doc' + (c.docs !== 1 ? 's' : ''));
+    if (subCount > 0) parts.push(subCount + ' sub-project' + (subCount !== 1 ? 's' : ''));
     if (!parts.length) return null;
     return <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{parts.join(' · ')}</div>;
   };
+
+  const ProjectTags = ({ p }) => (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+      {p.profile_override && (
+        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: 'rgba(0,145,164,0.08)', color: 'var(--accent)', fontWeight: 500 }}>
+          Rules override profile
+        </span>
+      )}
+      {p.high_scrutiny && (
+        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: 'rgba(217,83,79,0.08)', color: 'var(--danger)', fontWeight: 500 }}>
+          High scrutiny
+        </span>
+      )}
+      {(p.prompt_rules || []).length > 0 && (
+        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: 'var(--surface)', color: 'var(--text-muted)', fontWeight: 500 }}>
+          {p.prompt_rules.length} rule override{p.prompt_rules.length !== 1 ? 's' : ''}
+        </span>
+      )}
+    </div>
+  );
 
   if (editing) {
     const tabs = [
@@ -358,7 +380,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                   <input type='checkbox' checked={editing.profile_override} onChange={e => setEditing(p => ({ ...p, profile_override: e.target.checked }))} />
-                  Project overrides profile
+                  Project rules override profile
                 </label>
               </div>
             </>
@@ -397,26 +419,15 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
 
       {topLevel.map(p => {
         const subs = subProjects.filter(sp => sp.parent_id === p.id);
-        const isExpanded = expanded[p.id];
         return (
-          <div key={p.id}>
-            <div className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div key={p.id} style={{ marginBottom: 4 }}>
+            {/* Top-level project card */}
+            <div className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: subs.length > 0 ? 2 : 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {subs.length > 0 && (
-                    <button onClick={() => toggleExpand(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
-                      {isExpanded ? '▼' : '▶'}
-                    </button>
-                  )}
-                  <div className='card-title'>{p.name}</div>
-                  {subs.length > 0 && (
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--surface)', padding: '1px 6px', borderRadius: 10 }}>
-                      {subs.length} sub-project{subs.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-                {p.description && <div className='card-meta'>{p.description.slice(0, 100)}</div>}
-                <CountBar projectId={p.id} />
+                <div className='card-title'>{p.name}</div>
+                {p.description && <div className='card-meta' style={{ marginTop: 2 }}>{p.description.slice(0, 100)}</div>}
+                <CountBar projectId={p.id} subCount={subs.length} />
+                <ProjectTags p={p} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
                 <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(p)}>Edit</button>
@@ -428,15 +439,22 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                 <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => del(p.id)}>Delete</button>
               </div>
             </div>
-            {isExpanded && subs.map(sp => (
-              <div key={sp.id} className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginLeft: 24, borderLeft: '2px solid var(--accent)', borderRadius: '0 6px 6px 0' }}>
+
+            {/* Sub-projects -- always visible, indented */}
+            {subs.map((sp, i) => (
+              <div key={sp.id} className='card' style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                marginLeft: 24, marginBottom: i === subs.length - 1 ? 12 : 2,
+                borderLeft: '2px solid var(--teal-line)', borderRadius: '0 6px 6px 0',
+              }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
                     <div className='card-title'>{sp.name}</div>
                   </div>
-                  {sp.description && <div className='card-meta'>{sp.description.slice(0, 100)}</div>}
-                  <CountBar projectId={sp.id} />
+                  {sp.description && <div className='card-meta' style={{ marginTop: 2 }}>{sp.description.slice(0, 100)}</div>}
+                  <CountBar projectId={sp.id} subCount={0} />
+                  <ProjectTags p={sp} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
                   <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(sp)}>Edit</button>
