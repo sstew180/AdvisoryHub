@@ -4,7 +4,6 @@ import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
 const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Contract', 'Skills', 'Templates', 'Organisation', 'Communication'];
-const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' };
 
 export default function LibraryPage({ session, onMenuOpen }) {
   const [docs, setDocs] = useState([]);
@@ -15,7 +14,8 @@ export default function LibraryPage({ session, onMenuOpen }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [showUpload, setShowUpload] = useState(false);
+  const [form, setForm] = useState({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
   const [viewingDoc, setViewingDoc] = useState(null);
   const [docContent, setDocContent] = useState('');
   const [loadingContent, setLoadingContent] = useState(false);
@@ -37,18 +37,32 @@ export default function LibraryPage({ session, onMenuOpen }) {
       .then(({ data }) => { if (data) setProjects(data); });
   }, []);
 
+  // When filter changes, hide upload form and reset it
+  const handleFilterChange = (cat) => {
+    setFilter(cat);
+    setShowUpload(false);
+    setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
+  };
+
   const upload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setUploading(true);
     const fd = new FormData();
-    Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+    fd.append('title', form.title);
+    fd.append('category', filter); // always use the active tab category
+    fd.append('domain', 'Risk & Audit');
+    fd.append('jurisdiction', form.jurisdiction);
+    if (form.description) fd.append('description', form.description);
+    if (form.sourceUrl) fd.append('sourceUrl', form.sourceUrl);
+    if (form.projectId) fd.append('projectId', form.projectId);
     fd.append('file', file);
     try {
       await axios.post(API + '/api/library/upload', fd);
       loadDocs();
-      setForm(f => ({ ...EMPTY_FORM, category: f.category, domain: f.domain, jurisdiction: f.jurisdiction }));
+      setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
       setUploadSuccess(true);
-      setTimeout(() => setUploadSuccess(false), 2000);
+      setShowUpload(false);
+      setTimeout(() => setUploadSuccess(false), 3000);
     } catch {
       setError('Upload failed. Please try again.');
     }
@@ -61,11 +75,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
     setLoadingContent(true);
     setDocContent('');
     try {
-      const { data } = await supabase
-        .from('library_documents')
-        .select('content')
-        .eq('id', doc.id)
-        .single();
+      const { data } = await supabase.from('library_documents').select('content').eq('id', doc.id).single();
       setDocContent(data?.content || 'No content available.');
     } catch {
       setDocContent('Could not load document content.');
@@ -102,23 +112,23 @@ export default function LibraryPage({ session, onMenuOpen }) {
     return colours[cat] || { bg: '#f0f0ec', color: '#6b6b6b' };
   };
 
-  // Build grouped project options for the scope dropdown
   const topLevelProjects = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
   const projectOptions = [];
   topLevelProjects.forEach(p => {
-    projectOptions.push({ id: p.id, label: p.name, indent: false });
+    projectOptions.push({ id: p.id, label: p.name });
     subProjects.filter(sp => sp.parent_id === p.id).forEach(sp => {
-      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name, indent: true });
+      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name });
     });
   });
-  // Any sub-projects whose parent isn't in the list (edge case)
   subProjects.filter(sp => !topLevelProjects.find(p => p.id === sp.parent_id)).forEach(sp => {
-    projectOptions.push({ id: sp.id, label: sp.name, indent: false });
+    projectOptions.push({ id: sp.id, label: sp.name });
   });
 
   return (
     <div className='page'>
+
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button className='hamburger' onClick={onMenuOpen} aria-label='Open menu'>
@@ -130,11 +140,15 @@ export default function LibraryPage({ session, onMenuOpen }) {
           </button>
           <div className='page-title' style={{ margin: 0 }}>Library</div>
         </div>
+        {uploadSuccess && (
+          <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>
+        )}
         {error && (
           <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={loadDocs}>Retry</button>
         )}
       </div>
 
+      {/* View content modal */}
       {viewingDoc && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
@@ -153,85 +167,89 @@ export default function LibraryPage({ session, onMenuOpen }) {
               </div>
               <button onClick={() => setViewingDoc(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20,
-                  color: 'var(--text-muted)', padding: '0 4px', lineHeight: 1 }}>
-                ×
-              </button>
+                  color: 'var(--text-muted)', padding: '0 4px', lineHeight: 1 }}>×</button>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-              {loadingContent ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading content...</p>
-              ) : (
-                <pre style={{ fontFamily: 'var(--font)', fontSize: 13, lineHeight: 1.6,
-                  color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {docContent}
-                </pre>
-              )}
+              {loadingContent
+                ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading content...</p>
+                : <pre style={{ fontFamily: 'var(--font)', fontSize: 13, lineHeight: 1.6,
+                    color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {docContent}
+                  </pre>
+              }
             </div>
           </div>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* Category tabs */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {CATS.map(c => (
-          <button key={c} className={'btn ' + (filter === c ? 'btn-primary' : 'btn-secondary')}
-            style={{ fontSize: 12 }} onClick={() => setFilter(c)}>{c}</button>
+          <button key={c} onClick={() => handleFilterChange(c)}
+            style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent',
+              cursor: 'pointer', whiteSpace: 'nowrap',
+              borderBottom: filter === c ? '2px solid var(--accent)' : '2px solid transparent',
+              color: filter === c ? 'var(--accent)' : 'var(--text-secondary)',
+              fontWeight: filter === c ? 600 : 400, marginBottom: -1, transition: 'all 0.15s' }}>
+            {c}
+          </button>
         ))}
       </div>
 
-      {isAdmin && (
-        <div className='card' style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Upload document</div>
-            {uploadSuccess && (
-              <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>
-            )}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-            Skills, Templates, and Organisation documents are injected into every Guided mode response automatically. Scoping to a project limits injection to that project only.
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <div className='form-group' style={{ margin: 0 }}>
-              <label className='form-label'>Title</label>
-              <input className='form-input' value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+      {/* Upload button -- only shown on specific category tabs for admins */}
+      {isAdmin && filter !== 'All' && (
+        <div style={{ marginBottom: 20 }}>
+          {!showUpload ? (
+            <button className='btn btn-secondary' style={{ fontSize: 13 }}
+              onClick={() => setShowUpload(true)}>
+              + Upload {filter} document
+            </button>
+          ) : (
+            <div className='card'>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>Upload {filter} document</div>
+                <button onClick={() => setShowUpload(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18,
+                    color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Title</label>
+                  <input className='form-input' value={form.title}
+                    onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Jurisdiction</label>
+                  <input className='form-input' value={form.jurisdiction}
+                    onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Source URL (optional)</label>
+                  <input className='form-input' value={form.sourceUrl}
+                    onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
+                </div>
+                <div className='form-group' style={{ margin: 0 }}>
+                  <label className='form-label'>Scope to project (optional)</label>
+                  <select className='form-select' value={form.projectId}
+                    onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
+                    <option value=''>Global -- available to all sessions</option>
+                    {projectOptions.map(p => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className='form-group' style={{ margin: 0, gridColumn: '1 / -1' }}>
+                  <label className='form-label'>Description (optional)</label>
+                  <input className='form-input' value={form.description}
+                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+              </div>
+              <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
+                {uploading ? 'Uploading and embedding...' : 'Choose file and upload'}
+                <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
+              </label>
             </div>
-            <div className='form-group' style={{ margin: 0 }}>
-              <label className='form-label'>Category</label>
-              <select className='form-select' value={form.category}
-                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-                {CATS.slice(1).map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className='form-group' style={{ margin: 0 }}>
-              <label className='form-label'>Jurisdiction</label>
-              <input className='form-input' value={form.jurisdiction}
-                onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
-            </div>
-            <div className='form-group' style={{ margin: 0 }}>
-              <label className='form-label'>Source URL (optional)</label>
-              <input className='form-input' value={form.sourceUrl}
-                onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
-            </div>
-            <div className='form-group' style={{ margin: 0, gridColumn: '1 / -1' }}>
-              <label className='form-label'>Scope to project (optional)</label>
-              <select className='form-select' value={form.projectId}
-                onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
-                <option value=''>Global -- available to all sessions</option>
-                {projectOptions.map(p => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className='form-group'>
-            <label className='form-label'>Description</label>
-            <input className='form-input' value={form.description}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-          </div>
-          <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
-            {uploading ? 'Uploading and embedding...' : 'Choose file and upload'}
-            <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
-          </label>
+          )}
         </div>
       )}
 
@@ -283,10 +301,8 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     Source &rarr;
                   </a>
                 )}
-                <button onClick={() => viewDoc(d)}
-                  className='btn btn-secondary' style={{ fontSize: 12, padding: '4px 10px' }}>
-                  View
-                </button>
+                <button onClick={() => viewDoc(d)} className='btn btn-secondary'
+                  style={{ fontSize: 12, padding: '4px 10px' }}>View</button>
                 {isAdmin && (
                   <button onClick={() => deleteDoc(d.id)} disabled={deletingId === d.id}
                     className='btn btn-danger' style={{ fontSize: 12, padding: '4px 10px',
@@ -301,7 +317,9 @@ export default function LibraryPage({ session, onMenuOpen }) {
       })}
 
       {!loading && !error && filtered.length === 0 && (
-        <p style={{ color: 'var(--text-muted)' }}>No documents in this category yet.</p>
+        <p style={{ color: 'var(--text-muted)' }}>
+          {filter === 'All' ? 'No documents in the library yet.' : `No ${filter} documents yet.`}
+        </p>
       )}
     </div>
   );
