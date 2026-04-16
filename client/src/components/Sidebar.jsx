@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const NAV = [
@@ -53,16 +53,29 @@ function SessionItem({ s, isActive, onOpen, onArchive, sessionMenuId, setSession
   return (
     <div
       className={`session-item ${isActive ? 'active' : ''}`}
+      style={{ position: 'relative' }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setSessionMenuId(null); }}
+      onMouseLeave={() => { setHovered(false); if (!menuOpen) setSessionMenuId(null); }}
     >
-      {/* Tooltip -- only when hovered and dropdown is closed */}
+      {/* Tooltip -- floats above the row, only when hovered and menu is closed */}
       {hovered && !menuOpen && (
         <div style={{
-          position: 'absolute', left: 16, bottom: 'calc(100% + 4px)',
-          background: 'var(--text-primary)', color: 'white', fontSize: 11,
-          padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap', zIndex: 300,
-          pointerEvents: 'none', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis',
+          position: 'absolute',
+          left: 0,
+          bottom: '100%',
+          marginBottom: 4,
+          background: 'var(--text-primary)',
+          color: 'white',
+          fontSize: 11,
+          padding: '4px 8px',
+          borderRadius: 4,
+          whiteSpace: 'nowrap',
+          zIndex: 999,
+          pointerEvents: 'none',
+          maxWidth: 220,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
         }}>
           {tooltipText}
         </div>
@@ -71,21 +84,16 @@ function SessionItem({ s, isActive, onOpen, onArchive, sessionMenuId, setSession
       {/* Title */}
       <span
         className='session-title'
-        style={{ cursor: 'pointer', flex: 1 }}
+        style={{ cursor: 'pointer', flex: 1, minWidth: 0 }}
         onClick={() => onOpen(s.id)}
       >
         {s.title || 'New session'}
       </span>
 
-      {/* Time -- replaced by menu button on hover */}
-      {!hovered ? (
-        <span className='session-time' style={{ flexShrink: 0 }}>
-          {formatTime(s.created_at)}
-        </span>
-      ) : (
+      {/* Right side: time when not hovered, menu button when hovered */}
+      {hovered ? (
         <button
           className='session-menu-btn'
-          style={{ opacity: 1 }}
           onClick={(e) => {
             e.stopPropagation();
             setSessionMenuId(menuOpen ? null : s.id);
@@ -94,15 +102,41 @@ function SessionItem({ s, isActive, onOpen, onArchive, sessionMenuId, setSession
         >
           ···
         </button>
+      ) : (
+        <span className='session-time'>{formatTime(s.created_at)}</span>
       )}
 
-      {/* Dropdown */}
+      {/* Dropdown menu */}
       {menuOpen && (
         <div
-          className='session-menu-dropdown'
+          style={{
+            position: 'absolute',
+            right: 8,
+            top: '100%',
+            marginTop: 2,
+            background: 'var(--bg)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            zIndex: 999,
+            minWidth: 160,
+            overflow: 'hidden',
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button onClick={() => onArchive(s.id)}>Archive session</button>
+          <button
+            style={{
+              display: 'block', width: '100%', padding: '8px 14px',
+              textAlign: 'left', background: 'none', border: 'none',
+              fontSize: 13, fontFamily: 'var(--font)',
+              color: 'var(--text-primary)', cursor: 'pointer',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--surface)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            onClick={() => onArchive(s.id)}
+          >
+            Archive session
+          </button>
         </div>
       )}
     </div>
