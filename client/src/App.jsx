@@ -16,6 +16,20 @@ export default function App() {
   const [activeProject, setActiveProject] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Set --real-vh at app level so sidebar and all pages have it on first paint
+  useEffect(() => {
+    const setVh = () => {
+      document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
+    };
+    setVh();
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', setVh);
+    return () => {
+      window.removeEventListener('resize', setVh);
+      window.removeEventListener('orientationchange', setVh);
+    };
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session); setLoading(false);

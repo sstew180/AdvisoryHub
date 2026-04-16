@@ -51,7 +51,6 @@ function StatusCallout({ steps, visible }) {
   useEffect(() => {
     if (visible && steps.length > 0) setOpacity(1);
     else if (!visible) {
-      // Fade out after streaming completes
       const t = setTimeout(() => setOpacity(0), 100);
       return () => clearTimeout(t);
     }
@@ -70,14 +69,12 @@ function StatusCallout({ steps, visible }) {
       flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, maxWidth: 800, margin: '0 auto' }}>
-        {/* Left rail */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4, flexShrink: 0 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
           {steps.length > 1 && (
             <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4, minHeight: 6 }} />
           )}
         </div>
-        {/* Steps */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {steps.map((step, i) => (
             <div key={i} style={{ marginBottom: i < steps.length - 1 ? 6 : 0 }}>
@@ -144,18 +141,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
-  useEffect(() => {
-    const setVh = () => {
-      document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
-    };
-    setVh();
-    window.addEventListener('resize', setVh);
-    window.addEventListener('orientationchange', setVh);
-    return () => {
-      window.removeEventListener('resize', setVh);
-      window.removeEventListener('orientationchange', setVh);
-    };
-  }, []);
+  // --real-vh listener removed -- now lives in App.jsx
 
   useEffect(() => {
     if (!activeSessionId) { setMessages([]); return; }
@@ -292,7 +278,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     } catch (err) { console.error(err); }
 
     setStreaming(false);
-    // Fade out callout 2s after response completes
     setTimeout(() => {
       setStatusVisible(false);
       setTimeout(() => setStatusSteps([]), 400);
@@ -351,7 +336,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         <div ref={bottomRef} />
       </div>
 
-      {/* Fixed status callout between chat and input -- visible throughout streaming */}
       <StatusCallout steps={statusSteps} visible={statusVisible} />
 
       <div className='input-area'>
