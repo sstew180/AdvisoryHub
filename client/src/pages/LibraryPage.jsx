@@ -15,7 +15,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
   const [showUpload, setShowUpload] = useState(false);
-  const [form, setForm] = useState({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
+  const [form, setForm] = useState({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', selectedProjectIds: [] });
   const [viewingDoc, setViewingDoc] = useState(null);
   const [docContent, setDocContent] = useState('');
   const [loadingContent, setLoadingContent] = useState(false);
@@ -37,11 +37,19 @@ export default function LibraryPage({ session, onMenuOpen }) {
       .then(({ data }) => { if (data) setProjects(data); });
   }, []);
 
-  // When filter changes, hide upload form and reset it
   const handleFilterChange = (cat) => {
     setFilter(cat);
     setShowUpload(false);
-    setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
+    setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', selectedProjectIds: [] });
+  };
+
+  const toggleProjectSelection = (id) => {
+    setForm(f => ({
+      ...f,
+      selectedProjectIds: f.selectedProjectIds.includes(id)
+        ? f.selectedProjectIds.filter(pid => pid !== id)
+        : [...f.selectedProjectIds, id],
+    }));
   };
 
   const upload = async (e) => {
@@ -49,17 +57,18 @@ export default function LibraryPage({ session, onMenuOpen }) {
     setUploading(true);
     const fd = new FormData();
     fd.append('title', form.title);
-    fd.append('category', filter); // always use the active tab category
+    fd.append('category', filter);
     fd.append('domain', 'Risk & Audit');
     fd.append('jurisdiction', form.jurisdiction);
     if (form.description) fd.append('description', form.description);
     if (form.sourceUrl) fd.append('sourceUrl', form.sourceUrl);
-    if (form.projectId) fd.append('projectId', form.projectId);
+    // Send each selected project ID
+    form.selectedProjectIds.forEach(pid => fd.append('projectIds[]', pid));
     fd.append('file', file);
     try {
       await axios.post(API + '/api/library/upload', fd);
       loadDocs();
-      setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' });
+      setForm({ title: '', jurisdiction: 'Queensland', description: '', sourceUrl: '', selectedProjectIds: [] });
       setUploadSuccess(true);
       setShowUpload(false);
       setTimeout(() => setUploadSuccess(false), 3000);
@@ -112,18 +121,23 @@ export default function LibraryPage({ session, onMenuOpen }) {
     return colours[cat] || { bg: '#f0f0ec', color: '#6b6b6b' };
   };
 
+  // Build grouped project list for multi-select
   const topLevelProjects = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
   const projectOptions = [];
   topLevelProjects.forEach(p => {
-    projectOptions.push({ id: p.id, label: p.name });
+    projectOptions.push({ id: p.id, label: p.name, indent: false });
     subProjects.filter(sp => sp.parent_id === p.id).forEach(sp => {
-      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name });
+      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name, indent: true });
     });
   });
   subProjects.filter(sp => !topLevelProjects.find(p => p.id === sp.parent_id)).forEach(sp => {
-    projectOptions.push({ id: sp.id, label: sp.name });
+    projectOptions.push({ id: sp.id, label: sp.name, indent: false });
   });
+
+  // Build a lookup map for project names
+  const projectNameMap = {};
+  projects.forEach(p => { projectNameMap[p.id] = p.name; });
 
   return (
     <div className='page'>
@@ -140,12 +154,8 @@ export default function LibraryPage({ session, onMenuOpen }) {
           </button>
           <div className='page-title' style={{ margin: 0 }}>Library</div>
         </div>
-        {uploadSuccess && (
-          <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>
-        )}
-        {error && (
-          <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={loadDocs}>Retry</button>
-        )}
+        {uploadSuccess && <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>}
+        {error && <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={loadDocs}>Retry</button>}
       </div>
 
       {/* View content modal */}
@@ -196,12 +206,11 @@ export default function LibraryPage({ session, onMenuOpen }) {
         ))}
       </div>
 
-      {/* Upload button -- only shown on specific category tabs for admins */}
+      {/* Upload button -- only on specific category tabs for admins */}
       {isAdmin && filter !== 'All' && (
         <div style={{ marginBottom: 20 }}>
           {!showUpload ? (
-            <button className='btn btn-secondary' style={{ fontSize: 13 }}
-              onClick={() => setShowUpload(true)}>
+            <button className='btn btn-secondary' style={{ fontSize: 13 }} onClick={() => setShowUpload(true)}>
               + Upload {filter} document
             </button>
           ) : (
@@ -209,8 +218,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>Upload {filter} document</div>
                 <button onClick={() => setShowUpload(false)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18,
-                    color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <div className='form-group' style={{ margin: 0 }}>
@@ -228,22 +236,44 @@ export default function LibraryPage({ session, onMenuOpen }) {
                   <input className='form-input' value={form.sourceUrl}
                     onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
                 </div>
-                <div className='form-group' style={{ margin: 0 }}>
-                  <label className='form-label'>Scope to project (optional)</label>
-                  <select className='form-select' value={form.projectId}
-                    onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
-                    <option value=''>Global -- available to all sessions</option>
-                    {projectOptions.map(p => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </select>
-                </div>
                 <div className='form-group' style={{ margin: 0, gridColumn: '1 / -1' }}>
                   <label className='form-label'>Description (optional)</label>
                   <input className='form-input' value={form.description}
                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
               </div>
+
+              {/* Project scope -- multi-select checkboxes */}
+              {projectOptions.length > 0 && (
+                <div className='form-group'>
+                  <label className='form-label'>Scope to projects (leave unchecked for global)</label>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
+                    {projectOptions.map(p => (
+                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer',
+                        paddingLeft: p.indent ? 16 : 0, fontSize: 13, color: 'var(--text-primary)' }}>
+                        <input
+                          type='checkbox'
+                          checked={form.selectedProjectIds.includes(p.id)}
+                          onChange={() => toggleProjectSelection(p.id)}
+                          style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                  {form.selectedProjectIds.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      No projects selected -- document will be global
+                    </div>
+                  )}
+                  {form.selectedProjectIds.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>
+                      Linked to {form.selectedProjectIds.length} project{form.selectedProjectIds.length !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
                 {uploading ? 'Uploading and embedding...' : 'Choose file and upload'}
                 <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
@@ -265,7 +295,10 @@ export default function LibraryPage({ session, onMenuOpen }) {
       {!loading && !error && filtered.map(d => {
         const badge = categoryBadgeStyle(d.category);
         const isAutoInjected = ['Skills', 'Templates', 'Organisation'].includes(d.category);
-        const projectName = d.project_id ? projects.find(p => p.id === d.project_id)?.name : null;
+        // project_ids comes from the updated GET route via junction table
+        const linkedProjectIds = d.project_ids || [];
+        const isGlobal = linkedProjectIds.length === 0;
+
         return (
           <div key={d.id} className='card'>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -276,18 +309,24 @@ export default function LibraryPage({ session, onMenuOpen }) {
                     background: badge.bg, color: badge.color, fontWeight: 500 }}>
                     {d.category}
                   </span>
-                  {isAutoInjected && !projectName && (
+                  {isAutoInjected && isGlobal && (
                     <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
                       background: '#e8f4f8', color: '#0091a4', fontWeight: 500 }}>
                       Always on
                     </span>
                   )}
-                  {projectName && (
+                  {isGlobal && !isAutoInjected && (
                     <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
-                      background: '#f0f0ec', color: '#6b6b6b', fontWeight: 500 }}>
-                      {projectName}
+                      background: 'var(--surface)', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      Global
                     </span>
                   )}
+                  {linkedProjectIds.map(pid => (
+                    <span key={pid} style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+                      background: '#f0f4ff', color: '#2563eb', fontWeight: 500 }}>
+                      {projectNameMap[pid] || pid}
+                    </span>
+                  ))}
                 </div>
                 <div className='card-meta'>{d.jurisdiction}</div>
                 {d.description && (

@@ -137,9 +137,7 @@ function extractPdfText(buffer) {
       pdfParser.on('pdfParser_dataReady', (data) => {
         try {
           const text = data.Pages.map(page =>
-            page.Texts.map(t =>
-              t.R.map(r => decodeURIComponent(r.T)).join('')
-            ).join(' ')
+            page.Texts.map(t => t.R.map(r => decodeURIComponent(r.T)).join('')).join(' ')
           ).join('\n\n');
           resolve(text.trim().length > 0 ? text : null);
         } catch (e) {
@@ -163,17 +161,14 @@ async function extractFileText(file) {
   try {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
       return await extractPdfText(file.buffer);
-    } else if (
-      file.mimetype.includes('wordprocessingml') ||
-      file.originalname.toLowerCase().endsWith('.docx')
-    ) {
+    } else if (file.mimetype.includes('wordprocessingml') || file.originalname.toLowerCase().endsWith('.docx')) {
       const result = await mammoth.extractRawText({ buffer: file.buffer });
       return result.value || null;
     } else {
       return file.buffer.toString('utf-8');
     }
   } catch (err) {
-    console.error('File extraction error:', err.message, '| mimetype:', file.mimetype, '| size:', file.buffer.length);
+    console.error('File extraction error:', err.message);
     return null;
   }
 }
@@ -202,10 +197,7 @@ router.post('/', upload.single('file'), async (req, res) => {
         const lastMsg = messages[messages.length - 1];
         messages = [
           ...messages.slice(0, -1),
-          {
-            role: 'user',
-            content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
-          },
+          { role: 'user', content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}` },
         ];
         res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
       } else {
@@ -252,35 +244,49 @@ router.post('/', upload.single('file'), async (req, res) => {
       .eq('user_id', userId).not('summary', 'is', null)
       .order('created_at', { ascending: false }).limit(5);
 
+    // Build active project IDs for scoped library retrieval
+    const activeProjectIds = [
+      ...(projectId ? [projectId] : []),
+      ...(parentProject ? [parentProject.id] : []),
+    ];
+
     sendStatus(res, 'Fetching relevant frameworks');
+    // Use updated match_library RPC with filter_project_ids to get both global and project-scoped docs
     const { data: allLibraryDocs } = await supabase.rpc('match_library', {
-      query_embedding: queryEmbedding, match_threshold: 0.7, match_count: 8
+      query_embedding: queryEmbedding,
+      match_threshold: 0.7,
+      match_count: 8,
+      filter_project_ids: activeProjectIds.length > 0 ? activeProjectIds : null,
     });
     const globalLibraryDocs = (allLibraryDocs || []).filter(
       d => !['Skills', 'Templates', 'Organisation'].includes(d.category)
     );
 
+    // Fetch project-scoped Skills, Templates, Org via junction table
     let projectLibrarySkills = [];
     let projectLibraryTemplates = [];
     let projectLibraryOrg = [];
-    let projectLibraryFrameworks = [];
-
-    const activeProjectIds = [
-      ...(projectId ? [projectId] : []),
-      ...(parentProject ? [parentProject.id] : [])
-    ];
 
     if (activeProjectIds.length > 0 && mode !== 'direct') {
-      const { data: projLibDocs } = await supabase
-        .from('library_documents').select('id, title, category, content, source_url')
-        .in('project_id', activeProjectIds).eq('default_enabled', true);
-      if (projLibDocs) {
-        projectLibrarySkills = projLibDocs.filter(d => d.category === 'Skills');
-        projectLibraryTemplates = projLibDocs.filter(d => d.category === 'Templates');
-        projectLibraryOrg = projLibDocs.filter(d => d.category === 'Organisation');
-        projectLibraryFrameworks = projLibDocs.filter(
-          d => !['Skills', 'Templates', 'Organisation'].includes(d.category)
-        );
+      // Get document IDs linked to active projects via junction table
+      const { data: junctionLinks } = await supabase
+        .from('library_document_projects')
+        .select('document_id')
+        .in('project_id', activeProjectIds);
+
+      if (junctionLinks && junctionLinks.length > 0) {
+        const linkedDocIds = junctionLinks.map(l => l.document_id);
+        const { data: projLibDocs } = await supabase
+          .from('library_documents')
+          .select('id, title, category, content, source_url')
+          .in('id', linkedDocIds)
+          .eq('default_enabled', true);
+
+        if (projLibDocs) {
+          projectLibrarySkills = projLibDocs.filter(d => d.category === 'Skills');
+          projectLibraryTemplates = projLibDocs.filter(d => d.category === 'Templates');
+          projectLibraryOrg = projLibDocs.filter(d => d.category === 'Organisation');
+        }
       }
     }
 
@@ -290,6 +296,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     if (mode !== 'direct') {
       sendStatus(res, 'Loading skills and templates');
+      // Global skills/templates/org = those with no junction table entries
       const [skillRes, templateRes, orgRes] = await Promise.all([
         supabase.from('library_documents').select('id, title, content')
           .eq('category', 'Skills').eq('default_enabled', true).is('project_id', null),
@@ -298,15 +305,30 @@ router.post('/', upload.single('file'), async (req, res) => {
         supabase.from('library_documents').select('id, title, content')
           .eq('category', 'Organisation').eq('default_enabled', true).is('project_id', null),
       ]);
-      globalSkillDocs = skillRes.data || [];
-      globalTemplateDocs = templateRes.data || [];
-      globalOrgDocs = orgRes.data || [];
+      // Filter to only those with no junction links (truly global)
+      const allSkills = skillRes.data || [];
+      const allTemplates = templateRes.data || [];
+      const allOrg = orgRes.data || [];
+
+      const { data: allJunctionLinks } = await supabase
+        .from('library_document_projects')
+        .select('document_id')
+        .in('document_id', [
+          ...allSkills.map(d => d.id),
+          ...allTemplates.map(d => d.id),
+          ...allOrg.map(d => d.id),
+        ]);
+
+      const linkedIds = new Set((allJunctionLinks || []).map(l => l.document_id));
+      globalSkillDocs = allSkills.filter(d => !linkedIds.has(d.id));
+      globalTemplateDocs = allTemplates.filter(d => !linkedIds.has(d.id));
+      globalOrgDocs = allOrg.filter(d => !linkedIds.has(d.id));
     }
 
     const skillDocs = mergeLibraryDocs(globalSkillDocs, projectLibrarySkills);
     const templateDocs = mergeLibraryDocs(globalTemplateDocs, projectLibraryTemplates);
     const orgDocs = mergeLibraryDocs(globalOrgDocs, projectLibraryOrg);
-    const resolvedLibraryDocs = mergeLibraryDocs(globalLibraryDocs, projectLibraryFrameworks);
+    const resolvedLibraryDocs = globalLibraryDocs;
 
     sendStatus(res, 'Pulling your documents');
     const { data: userDocsRaw } = await supabase.rpc('match_user_documents', {
@@ -362,7 +384,6 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, userDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
-
   let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
     'You provide expert guidance drawing on best practice frameworks, Queensland legislation, ' +
