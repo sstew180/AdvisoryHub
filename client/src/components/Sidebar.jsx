@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 const NAV = [
@@ -41,6 +41,74 @@ function groupSessions(sessions) {
   return order.map(g => ({ label: g, sessions: groups[g] }));
 }
 
+function SessionItem({ s, isActive, onOpen, onArchive, sessionMenuId, setSessionMenuId }) {
+  const [hovered, setHovered] = useState(false);
+  const menuOpen = sessionMenuId === s.id;
+
+  const tooltipText = (s.title || 'New session') + ' · ' +
+    new Date(s.created_at).toLocaleString('en-AU', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+    });
+
+  return (
+    <div
+      className={`session-item ${isActive ? 'active' : ''}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setSessionMenuId(null); }}
+    >
+      {/* Tooltip -- only when hovered and dropdown is closed */}
+      {hovered && !menuOpen && (
+        <div style={{
+          position: 'absolute', left: 16, bottom: 'calc(100% + 4px)',
+          background: 'var(--text-primary)', color: 'white', fontSize: 11,
+          padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap', zIndex: 300,
+          pointerEvents: 'none', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {tooltipText}
+        </div>
+      )}
+
+      {/* Title */}
+      <span
+        className='session-title'
+        style={{ cursor: 'pointer', flex: 1 }}
+        onClick={() => onOpen(s.id)}
+      >
+        {s.title || 'New session'}
+      </span>
+
+      {/* Time -- replaced by menu button on hover */}
+      {!hovered ? (
+        <span className='session-time' style={{ flexShrink: 0 }}>
+          {formatTime(s.created_at)}
+        </span>
+      ) : (
+        <button
+          className='session-menu-btn'
+          style={{ opacity: 1 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setSessionMenuId(menuOpen ? null : s.id);
+          }}
+          title='Session options'
+        >
+          ···
+        </button>
+      )}
+
+      {/* Dropdown */}
+      {menuOpen && (
+        <div
+          className='session-menu-dropdown'
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button onClick={() => onArchive(s.id)}>Archive session</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -63,6 +131,9 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .order('name')
       .then(({ data }) => { if (data) setProjects(data); });
   }, [session, activeSessionId]);
+
+  const topLevel = projects.filter(p => !p.parent_id);
+  const subProjects = projects.filter(p => p.parent_id);
 
   useEffect(() => {
     if (!activeProject) {
@@ -100,17 +171,12 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: session.user.id }),
       });
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(null);
-      }
+      if (activeSessionId === sessionId) setActiveSessionId(null);
       loadSessions();
     } catch (err) {
       console.error('Archive session error:', err);
     }
   };
-
-  const topLevel = projects.filter(p => !p.parent_id);
-  const subProjects = projects.filter(p => p.parent_id);
 
   const handleTopLevelPill = (projectId) => {
     if (projectId === 'all' || projectId === 'none') {
@@ -206,39 +272,15 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
             <div key={group.label}>
               <div className='sidebar-section'>{group.label}</div>
               {group.sessions.map(s => (
-                <div
+                <SessionItem
                   key={s.id}
-                  className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                  style={{ position: 'relative' }}
-                  onMouseLeave={() => setSessionMenuId(null)}
-                >
-                  <span className='session-tooltip'>
-                    {(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <span
-                    className='session-title'
-                    style={{ cursor: 'pointer', flex: 1 }}
-                    onClick={() => handleSession(s.id)}
-                  >
-                    {s.title || 'New session'}
-                  </span>
-                  <span className='session-time' style={{ flexShrink: 0 }}>{formatTime(s.created_at)}</span>
-                  <button
-                    className='session-menu-btn'
-                    onClick={(e) => { e.stopPropagation(); setSessionMenuId(sessionMenuId === s.id ? null : s.id); }}
-                    title='Session options'
-                  >
-                    ···
-                  </button>
-                  {sessionMenuId === s.id && (
-                    <div
-                      className='session-menu-dropdown'
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button onClick={() => handleArchiveSession(s.id)}>Archive session</button>
-                    </div>
-                  )}
-                </div>
+                  s={s}
+                  isActive={activeSessionId === s.id}
+                  onOpen={handleSession}
+                  onArchive={handleArchiveSession}
+                  sessionMenuId={sessionMenuId}
+                  setSessionMenuId={setSessionMenuId}
+                />
               ))}
             </div>
           ))}
