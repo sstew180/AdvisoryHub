@@ -7,6 +7,7 @@ import ChatPage from './pages/ChatPage';
 import ProjectsPage from './pages/ProjectsPage';
 import LibraryPage from './pages/LibraryPage';
 import SettingsPage from './pages/SettingsPage';
+import ArchivePage from './pages/ArchivePage';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -16,7 +17,6 @@ export default function App() {
   const [activeProject, setActiveProject] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Set --real-vh at app level so sidebar and all pages have it on first paint
   useEffect(() => {
     const setVh = () => {
       document.documentElement.style.setProperty('--real-vh', window.innerHeight + 'px');
@@ -79,6 +79,14 @@ export default function App() {
         )}
         {view === 'settings' && (
           <SettingsPage session={session} onMenuOpen={() => setSidebarOpen(true)} />
+        )}
+        {view === 'archive' && (
+          <ArchivePage
+            session={session}
+            setActiveSessionId={setActiveSessionId}
+            setView={setView}
+            onMenuOpen={() => setSidebarOpen(true)}
+          />
         )}
       </div>
     </>

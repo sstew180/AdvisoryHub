@@ -219,14 +219,31 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [statusVisible, setStatusVisible] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [attachedFile, setAttachedFile] = useState(null);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [sessionArchived, setSessionArchived] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (!activeSessionId) { setMessages([]); return; }
-    supabase.from('messages').select('*').eq('session_id', activeSessionId)
-      .order('created_at').then(({ data }) => { if (data) setMessages(data); });
+    if (!activeSessionId) {
+      setMessages([]);
+      setSessionArchived(false);
+      return;
+    }
+    supabase
+      .from('messages')
+      .select('*')
+      .eq('session_id', activeSessionId)
+      .order('created_at')
+      .then(({ data }) => { if (data) setMessages(data); });
+
+    supabase
+      .from('sessions')
+      .select('archived_at')
+      .eq('id', activeSessionId)
+      .single()
+      .then(({ data }) => { setSessionArchived(!!data?.archived_at); });
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -267,6 +284,37 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const removeAttachment = () => setAttachedFile(null);
+
+  const handleArchiveSession = async () => {
+    setSessionMenuOpen(false);
+    if (!activeSessionId) return;
+    try {
+      await fetch(`${API}/api/sessions/${activeSessionId}/archive`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: session.user.id }),
+      });
+      setSessionArchived(true);
+      setActiveSessionId(null);
+    } catch (err) {
+      console.error('Archive error:', err);
+    }
+  };
+
+  const handleRestoreSession = async () => {
+    setSessionMenuOpen(false);
+    if (!activeSessionId) return;
+    try {
+      await fetch(`${API}/api/sessions/${activeSessionId}/restore`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: session.user.id }),
+      });
+      setSessionArchived(false);
+    } catch (err) {
+      console.error('Restore error:', err);
+    }
+  };
 
   const downloadSession = async () => {
     if (!activeSessionId || downloading) return;
@@ -320,7 +368,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         .map(m => ({ role: m.role, content: m.content }));
 
       if (fileToSend) {
-        // Send as FormData when file is attached
         const fd = new FormData();
         fd.append('userId', session.user.id);
         fd.append('sessionId', sessionId);
@@ -358,7 +405,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             if (parsed.status) {
               setStatusSteps(prev => [...prev, parsed.status]);
             } else if (parsed.attached) {
-              // File confirmed received by backend -- no UI action needed
+              // File confirmed received by backend
             } else if (parsed.autocaptured) {
               setAutoCaptured(parsed.autocaptured);
               setTimeout(() => setAutoCaptured(null), 4000);
@@ -434,10 +481,46 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             Note captured
           </div>
         )}
+        {activeSessionId && messages.length > 0 && (
+          <div style={{ marginLeft: autoCaptured ? 8 : 'auto', position: 'relative' }}>
+            <button
+              className='action-btn'
+              style={{ fontSize: 18, padding: '2px 8px', letterSpacing: 2 }}
+              onClick={() => setSessionMenuOpen(prev => !prev)}
+              title='Session options'
+            >
+              ···
+            </button>
+            {sessionMenuOpen && (
+              <div
+                className='session-menu-dropdown'
+                style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4 }}
+                onMouseLeave={() => setSessionMenuOpen(false)}
+              >
+                {sessionArchived ? (
+                  <button onClick={handleRestoreSession}>Restore session</button>
+                ) : (
+                  <button onClick={handleArchiveSession}>Archive session</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className='chat-area'>
-        {messages.length === 0 && !streaming && (
+        {sessionArchived && (
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)', padding: '8px 14px', marginBottom: 16,
+            fontSize: 13, color: 'var(--text-secondary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span>This session is archived and read-only.</span>
+            <button className='action-btn' onClick={handleRestoreSession}>Restore</button>
+          </div>
+        )}
+        {messages.length === 0 && !streaming && !sessionArchived && (
           <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} userId={session.user.id} />
         )}
         {messages.map((msg, i) => (
@@ -449,131 +532,131 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <StatusCallout steps={statusSteps} visible={statusVisible} />
 
-      <div className='input-area'>
-        <div className='input-area-inner'>
-          <div className='input-box'>
-            <div style={{ borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 4px',
-                gap: 8, borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
-                <button onClick={() => setFormatOpen(o => !o)}
-                  style={{ fontSize: 11, color: formatActiveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                    display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
-                  Format
-                  {formatActiveCount > 0 && (
-                    <span style={{ width: 6, height: 6, borderRadius: '50%',
-                      background: 'var(--accent)', display: 'inline-block', flexShrink: 0 }} />
-                  )}
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)',
-                    transform: formatOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    display: 'inline-block', transition: 'transform 0.2s' }}>▼</span>
-                </button>
-                {formatActiveCount > 0 && !formatOpen && (
-                  <span style={{ fontSize: 10, color: 'var(--accent)' }}>
-                    {[formatControls.length, formatControls.format, formatControls.depth]
-                      .filter(Boolean).join(', ')}
-                  </span>
-                )}
-                {formatActiveCount > 0 && (
-                  <button onClick={() => setFormatControls({ length: null, format: null, depth: null })}
-                    style={{ fontSize: 10, color: 'var(--text-muted)', background: 'none',
-                      border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>
-                    Clear
+      {!sessionArchived && (
+        <div className='input-area'>
+          <div className='input-area-inner'>
+            <div className='input-box'>
+              <div style={{ borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 4px',
+                  gap: 8, borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
+                  <button onClick={() => setFormatOpen(o => !o)}
+                    style={{ fontSize: 11, color: formatActiveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
+                    Format
+                    {formatActiveCount > 0 && (
+                      <span style={{ width: 6, height: 6, borderRadius: '50%',
+                        background: 'var(--accent)', display: 'inline-block', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)',
+                      transform: formatOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      display: 'inline-block', transition: 'transform 0.2s' }}>▼</span>
                   </button>
+                  {formatActiveCount > 0 && !formatOpen && (
+                    <span style={{ fontSize: 10, color: 'var(--accent)' }}>
+                      {[formatControls.length, formatControls.format, formatControls.depth]
+                        .filter(Boolean).join(', ')}
+                    </span>
+                  )}
+                  {formatActiveCount > 0 && (
+                    <button onClick={() => setFormatControls({ length: null, format: null, depth: null })}
+                      style={{ fontSize: 10, color: 'var(--text-muted)', background: 'none',
+                        border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {formatOpen && (
+                  <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px',
+                    flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                        textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Length</span>
+                      {LENGTH_OPTIONS.map(o => (
+                        <OptionPill key={o.id} active={formatControls.length === o.id}
+                          onClick={() => toggleFormat('length', o.id)}>{o.label}</OptionPill>
+                      ))}
+                    </div>
+                    <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                        textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Format</span>
+                      {FORMAT_OPTIONS.map(o => (
+                        <OptionPill key={o.id} active={formatControls.format === o.id}
+                          onClick={() => toggleFormat('format', o.id)}>{o.label}</OptionPill>
+                      ))}
+                    </div>
+                    <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
+                        textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Depth</span>
+                      {DEPTH_OPTIONS.map(o => (
+                        <OptionPill key={o.id} active={formatControls.depth === o.id}
+                          onClick={() => toggleFormat('depth', o.id)}>{o.label}</OptionPill>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-              {formatOpen && (
-                <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px',
-                  flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
-                      textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Length</span>
-                    {LENGTH_OPTIONS.map(o => (
-                      <OptionPill key={o.id} active={formatControls.length === o.id}
-                        onClick={() => toggleFormat('length', o.id)}>{o.label}</OptionPill>
-                    ))}
-                  </div>
-                  <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
-                      textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Format</span>
-                    {FORMAT_OPTIONS.map(o => (
-                      <OptionPill key={o.id} active={formatControls.format === o.id}
-                        onClick={() => toggleFormat('format', o.id)}>{o.label}</OptionPill>
-                    ))}
-                  </div>
-                  <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
-                      textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Depth</span>
-                    {DEPTH_OPTIONS.map(o => (
-                      <OptionPill key={o.id} active={formatControls.depth === o.id}
-                        onClick={() => toggleFormat('depth', o.id)}>{o.label}</OptionPill>
-                    ))}
-                  </div>
+
+              {attachedFile && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px',
+                  borderBottom: '1px solid var(--border)', background: 'rgba(0,145,164,0.04)' }}>
+                  <span style={{ fontSize: 14 }}>📎</span>
+                  <span style={{ fontSize: 12, color: 'var(--accent)', flex: 1,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {attachedFile.name}
+                  </span>
+                  <button onClick={removeAttachment}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
+                    ×
+                  </button>
                 </div>
               )}
-            </div>
 
-            {/* Attachment preview */}
-            {attachedFile && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px',
-                borderBottom: '1px solid var(--border)', background: 'rgba(0,145,164,0.04)' }}>
-                <span style={{ fontSize: 14 }}>📎</span>
-                <span style={{ fontSize: 12, color: 'var(--accent)', flex: 1,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {attachedFile.name}
-                </span>
-                <button onClick={removeAttachment}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
-                  ×
-                </button>
-              </div>
-            )}
-
-            <textarea
-              ref={textareaRef}
-              className='input-textarea'
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
-              rows={1}
-            />
-            <div className='input-footer'>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* Paperclip button */}
-                <label title='Attach a document (PDF, DOCX, TXT)'
-                  style={{ cursor: 'pointer', color: attachedFile ? 'var(--accent)' : 'var(--text-muted)',
-                    fontSize: 16, display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
-                  📎
-                  <input ref={fileInputRef} type='file' style={{ display: 'none' }}
-                    accept='.pdf,.docx,.txt,.md' onChange={handleFileChange} />
-                </label>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {messages.length > 0 && activeSessionId && (
-                  <button onClick={downloadSession} disabled={downloading || streaming}
-                    title='Download session as Word document'
-                    style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none',
-                      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                      padding: '5px 10px', cursor: 'pointer', transition: 'all 0.15s',
-                      opacity: downloading ? 0.5 : 1 }}>
-                    {downloading ? '...' : '↓ Doc'}
+              <textarea
+                ref={textareaRef}
+                className='input-textarea'
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
+                rows={1}
+              />
+              <div className='input-footer'>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label title='Attach a document (PDF, DOCX, TXT)'
+                    style={{ cursor: 'pointer', color: attachedFile ? 'var(--accent)' : 'var(--text-muted)',
+                      fontSize: 16, display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
+                    📎
+                    <input ref={fileInputRef} type='file' style={{ display: 'none' }}
+                      accept='.pdf,.docx,.txt,.md' onChange={handleFileChange} />
+                  </label>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {messages.length > 0 && activeSessionId && (
+                    <button onClick={downloadSession} disabled={downloading || streaming}
+                      title='Download session as Word document'
+                      style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none',
+                        border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                        padding: '5px 10px', cursor: 'pointer', transition: 'all 0.15s',
+                        opacity: downloading ? 0.5 : 1 }}>
+                      {downloading ? '...' : '↓ Doc'}
+                    </button>
+                  )}
+                  <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
+                    {streaming ? '...' : 'Send'}
                   </button>
-                )}
-                <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
-                  {streaming ? '...' : 'Send'}
-                </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

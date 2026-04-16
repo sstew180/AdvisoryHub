@@ -7,6 +7,7 @@ const NAV = [
   { id: 'projects', label: 'Projects', icon: '📁' },
   { id: 'library', label: 'Library', icon: '📚' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
+  { id: 'archive', label: 'Archive', icon: '◫' },
 ];
 
 function getDateGroup(dateStr) {
@@ -45,13 +46,17 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   const [projects, setProjects] = useState([]);
   const [projectFilter, setProjectFilter] = useState('all');
   const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [sessionMenuId, setSessionMenuId] = useState(null);
 
-  useEffect(() => {
-    if (!session) return;
+  const loadSessions = () => {
     supabase.rpc('get_sessions_with_messages', { p_user_id: session.user.id })
       .limit(60)
       .then(({ data }) => { if (data) setSessions(data); });
+  };
 
+  useEffect(() => {
+    if (!session) return;
+    loadSessions();
     supabase.from('projects')
       .select('id, name, parent_id')
       .eq('user_id', session.user.id)
@@ -65,7 +70,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       setExpandedProjectId(null);
     } else {
       setProjectFilter(activeProject.id);
-      // If active project is a sub-project, expand its parent
       const isSubProject = subProjects.some(sp => sp.id === activeProject.id);
       if (isSubProject) {
         const parent = projects.find(p => p.id === activeProject.parent_id);
@@ -88,6 +92,23 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
+  const handleArchiveSession = async (sessionId) => {
+    setSessionMenuId(null);
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}/archive`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: session.user.id }),
+      });
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(null);
+      }
+      loadSessions();
+    } catch (err) {
+      console.error('Archive session error:', err);
+    }
+  };
+
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
 
@@ -99,7 +120,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       return;
     }
     const fullProject = projects.find(p => p.id === projectId);
-    // If already active and expanded -- collapse
     if (projectFilter === projectId && expandedProjectId === projectId) {
       setExpandedProjectId(null);
     } else {
@@ -181,19 +201,43 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
             );
           })}
         </div>
-        <div className='sidebar-sessions'>
+        <div className='sidebar-sessions' onClick={() => setSessionMenuId(null)}>
           {groups.map(group => (
             <div key={group.label}>
               <div className='sidebar-section'>{group.label}</div>
               {group.sessions.map(s => (
-                <div key={s.id}
+                <div
+                  key={s.id}
                   className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
-                  onClick={() => handleSession(s.id)}>
+                  style={{ position: 'relative' }}
+                  onMouseLeave={() => setSessionMenuId(null)}
+                >
                   <span className='session-tooltip'>
                     {(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  <span className='session-title'>{s.title || 'New session'}</span>
+                  <span
+                    className='session-title'
+                    style={{ cursor: 'pointer', flex: 1 }}
+                    onClick={() => handleSession(s.id)}
+                  >
+                    {s.title || 'New session'}
+                  </span>
                   <span className='session-time' style={{ flexShrink: 0 }}>{formatTime(s.created_at)}</span>
+                  <button
+                    className='session-menu-btn'
+                    onClick={(e) => { e.stopPropagation(); setSessionMenuId(sessionMenuId === s.id ? null : s.id); }}
+                    title='Session options'
+                  >
+                    ···
+                  </button>
+                  {sessionMenuId === s.id && (
+                    <div
+                      className='session-menu-dropdown'
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button onClick={() => handleArchiveSession(s.id)}>Archive session</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
