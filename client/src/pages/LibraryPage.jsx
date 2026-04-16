@@ -16,6 +16,10 @@ export default function LibraryPage({ session, onMenuOpen }) {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [viewingDoc, setViewingDoc] = useState(null);
+  const [docContent, setDocContent] = useState('');
+  const [loadingContent, setLoadingContent] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const loadDocs = () => {
     setLoading(true);
@@ -52,6 +56,35 @@ export default function LibraryPage({ session, onMenuOpen }) {
     e.target.value = '';
   };
 
+  const viewDoc = async (doc) => {
+    setViewingDoc(doc);
+    setLoadingContent(true);
+    setDocContent('');
+    try {
+      const { data } = await supabase
+        .from('library_documents')
+        .select('content')
+        .eq('id', doc.id)
+        .single();
+      setDocContent(data?.content || 'No content available.');
+    } catch {
+      setDocContent('Could not load document content.');
+    }
+    setLoadingContent(false);
+  };
+
+  const deleteDoc = async (id) => {
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    setDeletingId(id);
+    try {
+      await axios.delete(API + '/api/library/' + id);
+      setDocs(prev => prev.filter(d => d.id !== id));
+    } catch {
+      setError('Delete failed. Please try again.');
+    }
+    setDeletingId(null);
+  };
+
   const filtered = filter === 'All' ? docs : docs.filter(d => d.category === filter);
 
   const categoryBadgeStyle = (cat) => {
@@ -85,6 +118,43 @@ export default function LibraryPage({ session, onMenuOpen }) {
           <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={loadDocs}>Retry</button>
         )}
       </div>
+
+      {/* View content modal */}
+      {viewingDoc && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setViewingDoc(null)}>
+          <div style={{ background: 'var(--bg)', borderRadius: 8, maxWidth: 720, width: '100%',
+            maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{viewingDoc.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {viewingDoc.category} · {viewingDoc.jurisdiction}
+                </div>
+              </div>
+              <button onClick={() => setViewingDoc(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20,
+                  color: 'var(--text-muted)', padding: '0 4px', lineHeight: 1 }}>
+                ×
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+              {loadingContent ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading content...</p>
+              ) : (
+                <pre style={{ fontFamily: 'var(--font)', fontSize: 13, lineHeight: 1.6,
+                  color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {docContent}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {CATS.map(c => (
@@ -166,7 +236,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
         return (
           <div key={d.id} className='card'>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                   <div className='card-title' style={{ margin: 0 }}>{d.title}</div>
                   <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
@@ -191,12 +261,25 @@ export default function LibraryPage({ session, onMenuOpen }) {
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>{d.description}</div>
                 )}
               </div>
-              {d.source_url && (
-                <a href={d.source_url} target='_blank' rel='noopener noreferrer'
-                  style={{ fontSize: 12, color: 'var(--accent)', marginLeft: 16, whiteSpace: 'nowrap' }}>
-                  Source &rarr;
-                </a>
-              )}
+              <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0, alignItems: 'center' }}>
+                {d.source_url && (
+                  <a href={d.source_url} target='_blank' rel='noopener noreferrer'
+                    style={{ fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+                    Source &rarr;
+                  </a>
+                )}
+                <button onClick={() => viewDoc(d)}
+                  className='btn btn-secondary' style={{ fontSize: 12, padding: '4px 10px' }}>
+                  View
+                </button>
+                {isAdmin && (
+                  <button onClick={() => deleteDoc(d.id)} disabled={deletingId === d.id}
+                    className='btn btn-danger' style={{ fontSize: 12, padding: '4px 10px',
+                      opacity: deletingId === d.id ? 0.5 : 1 }}>
+                    {deletingId === d.id ? '...' : 'Delete'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         );
