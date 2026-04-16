@@ -3,3 +3,5 @@ node_modules
 .env.local 
 dist 
 echo server\.env >> ..\.gitignore
+.vercel
+.env*.local

@@ -41,108 +41,6 @@ function groupSessions(sessions) {
   return order.map(g => ({ label: g, sessions: groups[g] }));
 }
 
-function SessionItem({ s, isActive, onOpen, onArchive, sessionMenuId, setSessionMenuId }) {
-  const [hovered, setHovered] = useState(false);
-  const menuOpen = sessionMenuId === s.id;
-
-  const tooltipText = (s.title || 'New session') + ' · ' +
-    new Date(s.created_at).toLocaleString('en-AU', {
-      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-    });
-
-  return (
-    <div
-      className={`session-item ${isActive ? 'active' : ''}`}
-      style={{ position: 'relative' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); if (!menuOpen) setSessionMenuId(null); }}
-    >
-      {/* Tooltip -- floats above the row, only when hovered and menu is closed */}
-      {hovered && !menuOpen && (
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          bottom: '100%',
-          marginBottom: 4,
-          background: 'var(--text-primary)',
-          color: 'white',
-          fontSize: 11,
-          padding: '4px 8px',
-          borderRadius: 4,
-          whiteSpace: 'nowrap',
-          zIndex: 999,
-          pointerEvents: 'none',
-          maxWidth: 220,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
-        }}>
-          {tooltipText}
-        </div>
-      )}
-
-      {/* Title */}
-      <span
-        className='session-title'
-        style={{ cursor: 'pointer', flex: 1, minWidth: 0 }}
-        onClick={() => onOpen(s.id)}
-      >
-        {s.title || 'New session'}
-      </span>
-
-      {/* Right side: time when not hovered, menu button when hovered */}
-      {hovered ? (
-        <button
-          className='session-menu-btn'
-          onClick={(e) => {
-            e.stopPropagation();
-            setSessionMenuId(menuOpen ? null : s.id);
-          }}
-          title='Session options'
-        >
-          ···
-        </button>
-      ) : (
-        <span className='session-time'>{formatTime(s.created_at)}</span>
-      )}
-
-      {/* Dropdown menu */}
-      {menuOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 8,
-            top: '100%',
-            marginTop: 2,
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            zIndex: 999,
-            minWidth: 160,
-            overflow: 'hidden',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            style={{
-              display: 'block', width: '100%', padding: '8px 14px',
-              textAlign: 'left', background: 'none', border: 'none',
-              fontSize: 13, fontFamily: 'var(--font)',
-              color: 'var(--text-primary)', cursor: 'pointer',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--surface)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            onClick={() => onArchive(s.id)}
-          >
-            Archive session
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, isOpen, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -197,7 +95,8 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
-  const handleArchiveSession = async (sessionId) => {
+  const handleArchiveSession = async (e, sessionId) => {
+    e.stopPropagation();
     setSessionMenuId(null);
     try {
       await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}/archive`, {
@@ -266,14 +165,10 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
         <div className='project-filter'>
           <button
             className={`project-filter-pill ${projectFilter === 'all' ? 'active' : ''}`}
-            onClick={() => handleTopLevelPill('all')}>
-            All
-          </button>
+            onClick={() => handleTopLevelPill('all')}>All</button>
           <button
             className={`project-filter-pill ${projectFilter === 'none' ? 'active' : ''}`}
-            onClick={() => handleTopLevelPill('none')}>
-            No project
-          </button>
+            onClick={() => handleTopLevelPill('none')}>No project</button>
           {topLevel.map(p => {
             const subs = subProjects.filter(sp => sp.parent_id === p.id);
             const isExpanded = expandedProjectId === p.id;
@@ -305,17 +200,41 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
           {groups.map(group => (
             <div key={group.label}>
               <div className='sidebar-section'>{group.label}</div>
-              {group.sessions.map(s => (
-                <SessionItem
-                  key={s.id}
-                  s={s}
-                  isActive={activeSessionId === s.id}
-                  onOpen={handleSession}
-                  onArchive={handleArchiveSession}
-                  sessionMenuId={sessionMenuId}
-                  setSessionMenuId={setSessionMenuId}
-                />
-              ))}
+              {group.sessions.map(s => {
+                const menuOpen = sessionMenuId === s.id;
+                const tooltipText = (s.title || 'New session') + ' · ' +
+                  new Date(s.created_at).toLocaleString('en-AU', {
+                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                  });
+                return (
+                  <div
+                    key={s.id}
+                    className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                    title={tooltipText}
+                    onClick={() => handleSession(s.id)}
+                  >
+                    <span className='session-title'>{s.title || 'New session'}</span>
+                    <span className='session-time'>{formatTime(s.created_at)}</span>
+                    <button
+                      className='session-menu-btn'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSessionMenuId(menuOpen ? null : s.id);
+                      }}
+                      title='Session options'
+                    >
+                      ···
+                    </button>
+                    {menuOpen && (
+                      <div className='session-menu-dropdown' onClick={e => e.stopPropagation()}>
+                        <button onClick={(e) => handleArchiveSession(e, s.id)}>
+                          Archive session
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ))}
           {filteredSessions.length === 0 && (

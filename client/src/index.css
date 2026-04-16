@@ -38,30 +38,86 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
 .nav-item.active { color: var(--accent); font-weight: 500; }
 .sidebar-section { padding: 10px 16px 2px; font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
-.session-item { padding: 4px 16px; font-size: 12px; color: var(--text-secondary);
-  cursor: pointer; display: flex; align-items: center;
-  gap: 8px; transition: background 0.1s; position: relative; }
+
+/* Session items */
+.session-item {
+  padding: 4px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.1s;
+  position: relative;
+}
 .session-item:hover { background: var(--surface); }
 .session-item.active { color: var(--text-primary); font-weight: 500; }
-.session-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: 12px; }
-.session-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
-.sidebar-sessions { flex: 1; overflow-y: auto; }
 
-/* Session three-dot menu button */
+.session-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+/* Time: visible by default, hidden on hover */
+.session-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: block;
+}
+.session-item:hover .session-time { display: none; }
+
+/* Menu button: hidden by default, visible on hover */
 .session-menu-btn {
+  display: none;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 16px;
   padding: 0 2px;
   line-height: 1;
   flex-shrink: 0;
   letter-spacing: 2px;
   font-family: var(--font);
 }
+.session-item:hover .session-menu-btn { display: block; }
 .session-menu-btn:hover { color: var(--text-primary); }
+
+/* Dropdown */
+.session-menu-dropdown {
+  position: absolute;
+  right: 8px;
+  top: 100%;
+  margin-top: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 999;
+  min-width: 160px;
+  overflow: visible;
+}
+.session-menu-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.session-menu-dropdown button:hover { background: var(--surface); }
+
+.sidebar-sessions { flex: 1; overflow-y: auto; }
 
 /* Project filter pills */
 .project-filter { padding: 8px 12px; border-bottom: 1px solid var(--border);
