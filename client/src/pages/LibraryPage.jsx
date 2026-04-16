@@ -33,7 +33,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
     loadDocs();
     supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
       .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
-    supabase.from('projects').select('id, name').eq('user_id', session.user.id).order('name')
+    supabase.from('projects').select('id, name, parent_id').eq('user_id', session.user.id).order('name')
       .then(({ data }) => { if (data) setProjects(data); });
   }, []);
 
@@ -101,6 +101,21 @@ export default function LibraryPage({ session, onMenuOpen }) {
     };
     return colours[cat] || { bg: '#f0f0ec', color: '#6b6b6b' };
   };
+
+  // Build grouped project options for the scope dropdown
+  const topLevelProjects = projects.filter(p => !p.parent_id);
+  const subProjects = projects.filter(p => p.parent_id);
+  const projectOptions = [];
+  topLevelProjects.forEach(p => {
+    projectOptions.push({ id: p.id, label: p.name, indent: false });
+    subProjects.filter(sp => sp.parent_id === p.id).forEach(sp => {
+      projectOptions.push({ id: sp.id, label: '↳ ' + sp.name, indent: true });
+    });
+  });
+  // Any sub-projects whose parent isn't in the list (edge case)
+  subProjects.filter(sp => !topLevelProjects.find(p => p.id === sp.parent_id)).forEach(sp => {
+    projectOptions.push({ id: sp.id, label: sp.name, indent: false });
+  });
 
   return (
     <div className='page'>
@@ -202,8 +217,8 @@ export default function LibraryPage({ session, onMenuOpen }) {
               <select className='form-select' value={form.projectId}
                 onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
                 <option value=''>Global -- available to all sessions</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                {projectOptions.map(p => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
             </div>
