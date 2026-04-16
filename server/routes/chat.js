@@ -131,14 +131,22 @@ function sendStatus(res, message) {
 }
 
 async function extractFileText(file) {
-  if (file.mimetype === 'application/pdf') {
-    const data = await pdfParse(file.buffer);
-    return data.text;
-  } else if (file.mimetype.includes('wordprocessingml') || file.originalname.endsWith('.docx')) {
-    const result = await mammoth.extractRawText({ buffer: file.buffer });
-    return result.value;
-  } else {
-    return file.buffer.toString('utf-8');
+  try {
+    if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
+      const data = await pdfParse(file.buffer);
+      return data.text || '';
+    } else if (
+      file.mimetype.includes('wordprocessingml') ||
+      file.originalname.toLowerCase().endsWith('.docx')
+    ) {
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      return result.value || '';
+    } else {
+      return file.buffer.toString('utf-8');
+    }
+  } catch (err) {
+    console.error('File extraction error:', err.message);
+    return null;
   }
 }
 
@@ -159,22 +167,27 @@ router.post('/', upload.single('file'), async (req, res) => {
   try {
     // If a file was attached, extract its text and prepend to the last user message
     let attachedFileName = null;
-    if (req.file) {
-      sendStatus(res, 'Reading attached document');
-      const fileText = await extractFileText(req.file);
-      attachedFileName = req.file.originalname;
-      const truncated = fileText.slice(0, 40000);
-      const lastMsg = messages[messages.length - 1];
-      messages = [
-        ...messages.slice(0, -1),
-        {
-          role: 'user',
-          content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
-        },
-      ];
-      // Send confirmation to frontend
-      res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
-    }
+if (req.file) {
+  sendStatus(res, 'Reading attached document');
+  const fileText = await extractFileText(req.file);
+  attachedFileName = req.file.originalname;
+  if (fileText && fileText.trim().length > 0) {
+    const truncated = fileText.slice(0, 40000);
+    const lastMsg = messages[messages.length - 1];
+    messages = [
+      ...messages.slice(0, -1),
+      {
+        role: 'user',
+        content: `## Attached document: ${attachedFileName}\n\n${truncated}\n\n---\n\n${lastMsg.content}`,
+      },
+    ];
+    res.write('data: ' + JSON.stringify({ attached: attachedFileName }) + '\n\n');
+  } else {
+    // Extraction failed -- warn user and continue without file content
+    res.write('data: ' + JSON.stringify({ status: 'Could not extract text from ' + attachedFileName + ' -- continuing without it' }) + '\n\n');
+    attachedFileName = null;
+  }
+}
 
     sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
