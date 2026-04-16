@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import Message from '../components/Message';
 import axios from 'axios';
@@ -27,7 +27,7 @@ const DEPTH_OPTIONS = [
 
 const isMobile = () => window.innerWidth < 768;
 
-const GENERAL_PROMPTS = [
+const FALLBACK_GENERAL_PROMPTS = [
   'What are the key elements of an effective risk appetite statement for a local government?',
   'Summarise the QAO better practice approach to internal audit planning.',
   'Draft a briefing note on the requirements of the Local Government Act 2009 for risk management.',
@@ -36,7 +36,7 @@ const GENERAL_PROMPTS = [
   'What does ISO 31000 say about risk treatment options?',
 ];
 
-const PROJECT_PROMPTS = [
+const FALLBACK_PROJECT_PROMPTS = [
   'Summarise the key objectives and current status of this project.',
   'What are the main risks associated with this project?',
   'Draft a briefing note on the progress of this project.',
@@ -44,6 +44,58 @@ const PROJECT_PROMPTS = [
   'Identify any assumptions in this project that should be tested.',
   'What would a critical review of this project highlight?',
 ];
+
+async function generatePersonalisedPrompts(profile, activeProject) {
+  const profileParts = [];
+  if (profile.role) profileParts.push('Role: ' + profile.role);
+  if (profile.service_area) profileParts.push('Service area: ' + profile.service_area);
+  if (profile.organisation) profileParts.push('Organisation: ' + profile.organisation);
+  if (profile.goals) profileParts.push('Current objectives: ' + profile.goals);
+
+  const projectParts = [];
+  if (activeProject) {
+    projectParts.push('Active project: ' + activeProject.name);
+    if (activeProject.description) projectParts.push('Background: ' + activeProject.description);
+    if (activeProject.objectives) projectParts.push('Objectives: ' + activeProject.objectives);
+  }
+
+  const contextBlock = [
+    profileParts.length > 0 ? 'User profile:\n' + profileParts.join('\n') : '',
+    projectParts.length > 0 ? 'Active project:\n' + projectParts.join('\n') : '',
+  ].filter(Boolean).join('\n\n');
+
+  if (!contextBlock.trim()) return null;
+
+  const systemPrompt = 'You are AdvisoryHub, an AI advisory assistant for local government officers specialising in Risk, Audit, and Insurance in Queensland, Australia.';
+
+  const userPrompt = `Based on this user context, generate exactly 6 short, specific, actionable prompt suggestions the user might want to ask right now. Each suggestion should be a complete question or request, directly relevant to their role, objectives, or active project. Make them concrete and practical -- not generic.
+
+${contextBlock}
+
+Return a JSON array of exactly 6 strings. No other text, no markdown, no explanation. Example format:
+["Prompt one", "Prompt two", "Prompt three", "Prompt four", "Prompt five", "Prompt six"]`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  const text = data.content?.[0]?.text?.trim();
+  if (!text) return null;
+
+  const clean = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+  const parsed = JSON.parse(clean);
+  if (Array.isArray(parsed) && parsed.length === 6) return parsed;
+  return null;
+}
 
 function StatusCallout({ steps, visible }) {
   const [opacity, setOpacity] = useState(0);
@@ -102,27 +154,76 @@ function StatusCallout({ steps, visible }) {
   );
 }
 
-function EmptyState({ activeProject, onPromptClick }) {
-  const prompts = activeProject ? PROJECT_PROMPTS : GENERAL_PROMPTS;
+function EmptyState({ activeProject, onPromptClick, userId }) {
+  const [prompts, setPrompts] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const fallback = activeProject ? FALLBACK_PROJECT_PROMPTS : FALLBACK_GENERAL_PROMPTS;
   const subtitle = activeProject ? 'Active project: ' + activeProject.name : 'Risk, Audit and Insurance';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setPrompts(null);
+    try {
+      const { data: profile } = await supabase
+        .from('profiles').select('role, service_area, organisation, goals')
+        .eq('id', userId).single();
+      const result = await generatePersonalisedPrompts(profile || {}, activeProject);
+      setPrompts(result);
+    } catch {
+      setPrompts(null);
+    }
+    setLoading(false);
+  }, [userId, activeProject?.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const displayPrompts = prompts || fallback;
+
   return (
     <div style={{ paddingTop: 48, paddingBottom: 32, maxWidth: 600, margin: '0 auto', width: '100%' }}>
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
         <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>AdvisoryHub</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {prompts.map((prompt, i) => (
-          <div key={i} onClick={() => onPromptClick(prompt)}
-            style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-              cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.45,
-              background: 'var(--bg)', transition: 'all 0.15s' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
-            {prompt}
+
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} style={{
+              padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              background: 'var(--surface)', height: 60,
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }} />
+          ))}
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <button onClick={load} title='Refresh suggestions'
+            style={{ position: 'absolute', top: -32, right: 0, background: 'none', border: 'none',
+              cursor: 'pointer', fontSize: 16, color: 'var(--text-muted)', padding: '2px 6px',
+              borderRadius: 'var(--radius)', transition: 'color 0.15s' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
+            ↻
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {displayPrompts.map((prompt, i) => (
+              <div key={i} onClick={() => onPromptClick(prompt)}
+                style={{ padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                  cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.45,
+                  background: 'var(--bg)', transition: 'all 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
+                {prompt}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+      `}</style>
     </div>
   );
 }
@@ -140,8 +241,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [downloading, setDownloading] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
-
-  // --real-vh listener removed -- now lives in App.jsx
 
   useEffect(() => {
     if (!activeSessionId) { setMessages([]); return; }
@@ -327,7 +426,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <div className='chat-area'>
         {messages.length === 0 && !streaming && (
-          <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} />
+          <EmptyState
+            activeProject={activeProject}
+            onPromptClick={handlePromptClick}
+            userId={session.user.id}
+          />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
