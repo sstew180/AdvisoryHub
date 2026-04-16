@@ -226,6 +226,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const [editing, setEditing] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
   const [projectCounts, setProjectCounts] = useState({});
+  const [expanded, setExpanded] = useState({});
 
   useEffect(() => { load(); }, []);
   useEffect(() => { setActiveTab('details'); }, [editing?.id]);
@@ -272,6 +273,8 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     if (activeProject?.id === id) setActiveProject(null);
     load();
   };
+
+  const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 
   const topLevel = projects.filter(p => !p.parent_id);
   const subProjects = projects.filter(p => p.parent_id);
@@ -419,12 +422,22 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
 
       {topLevel.map(p => {
         const subs = subProjects.filter(sp => sp.parent_id === p.id);
+        const isExpanded = !!expanded[p.id];
         return (
-          <div key={p.id} style={{ marginBottom: 4 }}>
-            {/* Top-level project card */}
-            <div className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: subs.length > 0 ? 2 : 12 }}>
+          <div key={p.id} style={{ marginBottom: 12 }}>
+            <div className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: isExpanded && subs.length > 0 ? 2 : 0 }}>
               <div style={{ flex: 1 }}>
-                <div className='card-title'>{p.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {subs.length > 0 && (
+                    <button
+                      onClick={() => toggleExpand(p.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1, flexShrink: 0, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    >
+                      ▶
+                    </button>
+                  )}
+                  <div className='card-title'>{p.name}</div>
+                </div>
                 {p.description && <div className='card-meta' style={{ marginTop: 2 }}>{p.description.slice(0, 100)}</div>}
                 <CountBar projectId={p.id} subCount={subs.length} />
                 <ProjectTags p={p} />
@@ -440,11 +453,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               </div>
             </div>
 
-            {/* Sub-projects -- always visible, indented */}
-            {subs.map((sp, i) => (
+            {isExpanded && subs.map((sp, i) => (
               <div key={sp.id} className='card' style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                marginLeft: 24, marginBottom: i === subs.length - 1 ? 12 : 2,
+                marginLeft: 24, marginBottom: i === subs.length - 1 ? 0 : 2,
                 borderLeft: '2px solid var(--teal-line)', borderRadius: '0 6px 6px 0',
               }}>
                 <div style={{ flex: 1 }}>
