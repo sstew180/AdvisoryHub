@@ -145,7 +145,7 @@ async function extractFileText(file) {
       return file.buffer.toString('utf-8');
     }
   } catch (err) {
-    console.error('File extraction error:', err.message);
+    console.error('File extraction error:', err.message, '| mimetype:', file.mimetype, '| size:', file.buffer.length);
     return null;
   }
 }
