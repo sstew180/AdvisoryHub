@@ -45,39 +45,60 @@ const PROJECT_PROMPTS = [
   'What would a critical review of this project highlight?',
 ];
 
-function ThinkingBlock({ steps, collapsed }) {
+function StatusCallout({ steps, visible }) {
+  const [opacity, setOpacity] = useState(0);
+
+  useEffect(() => {
+    if (visible && steps.length > 0) setOpacity(1);
+    else if (!visible) {
+      // Fade out after streaming completes
+      const t = setTimeout(() => setOpacity(0), 100);
+      return () => clearTimeout(t);
+    }
+  }, [visible, steps.length]);
+
   if (steps.length === 0) return null;
+
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 3, flexShrink: 0 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-          {!collapsed && steps.length > 1 && (
-            <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4, minHeight: 8 }} />
+    <div style={{
+      borderTop: '1px solid var(--border)',
+      borderBottom: '1px solid var(--border)',
+      background: 'var(--surface)',
+      padding: '10px 48px',
+      opacity,
+      transition: 'opacity 0.3s ease',
+      flexShrink: 0,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, maxWidth: 800, margin: '0 auto' }}>
+        {/* Left rail */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4, flexShrink: 0 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+          {steps.length > 1 && (
+            <div style={{ width: 1, flex: 1, background: 'var(--border)', marginTop: 4, minHeight: 6 }} />
           )}
         </div>
+        {/* Steps */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {collapsed ? (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              {steps[steps.length - 1]}
-            </div>
-          ) : (
-            steps.map((step, i) => (
-              <div key={i} style={{ marginBottom: i < steps.length - 1 ? 8 : 0 }}>
-                <div style={{ fontSize: 12, color: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
-                  fontWeight: i === steps.length - 1 ? 500 : 400, animation: 'fadeIn 0.3s ease' }}>
-                  {i > 0 && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 6 }}>
-                      <span style={{ width: 4, height: 4, borderRadius: '50%',
-                        background: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
-                        display: 'inline-block' }} />
-                    </span>
-                  )}
-                  {step}
-                </div>
+          {steps.map((step, i) => (
+            <div key={i} style={{ marginBottom: i < steps.length - 1 ? 6 : 0 }}>
+              <div style={{
+                fontSize: 12,
+                color: i === steps.length - 1 ? 'var(--accent)' : 'var(--text-muted)',
+                fontWeight: i === steps.length - 1 ? 500 : 400,
+                animation: 'fadeIn 0.25s ease',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                {i > 0 && (
+                  <span style={{
+                    width: 4, height: 4, borderRadius: '50%', flexShrink: 0,
+                    background: i === steps.length - 1 ? 'var(--accent)' : 'var(--border)',
+                    display: 'inline-block',
+                  }} />
+                )}
+                {step}
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -118,7 +139,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [formatOpen, setFormatOpen] = useState(!isMobile());
   const [autoCaptured, setAutoCaptured] = useState(null);
   const [statusSteps, setStatusSteps] = useState([]);
-  const [statusCollapsed, setStatusCollapsed] = useState(false);
+  const [statusVisible, setStatusVisible] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
@@ -144,7 +165,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, statusSteps]);
+  }, [messages]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -210,7 +231,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setStreaming(true);
     setAutoCaptured(null);
     setStatusSteps([]);
-    setStatusCollapsed(false);
+    setStatusVisible(true);
     let assistantText = '';
     let hasStartedText = false;
 
@@ -247,7 +268,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             } else if (parsed.text) {
               if (!hasStartedText) {
                 hasStartedText = true;
-                setStatusCollapsed(true);
                 setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
               }
               assistantText += parsed.text;
@@ -270,8 +290,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         }).catch(console.error);
       }
     } catch (err) { console.error(err); }
+
     setStreaming(false);
-    setTimeout(() => setStatusSteps([]), 2000);
+    // Fade out callout 2s after response completes
+    setTimeout(() => {
+      setStatusVisible(false);
+      setTimeout(() => setStatusSteps([]), 400);
+    }, 2000);
   };
 
   const OptionPill = ({ active, onClick, children }) => (
@@ -289,7 +314,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       height: 'var(--real-vh, 100dvh)' }}>
 
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
       <div className='topbar'>
@@ -316,20 +341,18 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       </div>
 
       <div className='chat-area'>
-        {messages.length === 0 && statusSteps.length === 0 && (
+        {messages.length === 0 && !streaming && (
           <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
             sessionId={activeSessionId} onPin={() => console.log('Pinned')} />
         ))}
-        {statusSteps.length > 0 && (
-          <div style={{ padding: '8px 0 4px' }}>
-            <ThinkingBlock steps={statusSteps} collapsed={statusCollapsed} />
-          </div>
-        )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Fixed status callout between chat and input -- visible throughout streaming */}
+      <StatusCallout steps={statusSteps} visible={statusVisible} />
 
       <div className='input-area'>
         <div className='input-area-inner'>
