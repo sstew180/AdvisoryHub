@@ -14,8 +14,10 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/pin-memory', require('./routes/pinMemory'));
 app.use('/api/library', require('./routes/library'));
 app.use('/api/generate-title', require('./routes/generateTitle'));
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/user-documents', require('./routes/userDocuments'));
 app.use('/api/generate-file', require('./routes/generateFile'));
 app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/projects', require('./routes/projects'));
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
 app.listen(PORT, () => console.log(`AdvisoryHub API running on port ${PORT}`));
