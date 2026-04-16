@@ -187,14 +187,22 @@ function ProjectLibraryTab({ projectId }) {
     e.target.value = '';
   };
 
+  const deleteDoc = async (id) => {
+    if (!confirm('Remove this document?')) return;
+    try {
+      await axios.delete(API + '/api/library/' + id);
+      load();
+    } catch { }
+  };
+
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        Project-scoped library documents are only injected when this project is active.
+        Upload documents to this project. They will be injected as context whenever this project is active.
       </div>
       <div className='card' style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>Upload project document</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>Upload document</div>
           {uploadSuccess && <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Uploaded</span>}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -232,21 +240,26 @@ function ProjectLibraryTab({ projectId }) {
         </label>
       </div>
       {libDocs.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No project-scoped library documents yet.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded to this project yet.</p>
       )}
       {libDocs.map(d => (
-        <div key={d.id} className='card'>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
-            <div className='card-title' style={{ margin: 0 }}>{d.title}</div>
-            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
-              background: 'var(--surface)', color: 'var(--text-secondary)', fontWeight: 500 }}>
-              {d.category}
-            </span>
+        <div key={d.id} className='card'
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+              <div className='card-title' style={{ margin: 0 }}>{d.title}</div>
+              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+                background: 'var(--surface)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                {d.category}
+              </span>
+            </div>
+            <div className='card-meta'>{d.jurisdiction}</div>
+            {d.description && (
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{d.description}</div>
+            )}
           </div>
-          <div className='card-meta'>{d.jurisdiction}</div>
-          {d.description && (
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{d.description}</div>
-          )}
+          <button className='btn btn-danger' style={{ fontSize: 12, marginLeft: 12, flexShrink: 0 }}
+            onClick={() => deleteDoc(d.id)}>Remove</button>
         </div>
       ))}
     </div>
@@ -399,8 +412,6 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
 export default function ProjectsPage({ session, activeProject, setActiveProject, setView, onMenuOpen, setActiveSessionId }) {
   const [projects, setProjects] = useState([]);
   const [editing, setEditing] = useState(null);
-  const [docs, setDocs] = useState([]);
-  const [uploading, setUploading] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [activeTab, setActiveTab] = useState('details');
   const [projectCounts, setProjectCounts] = useState({});
@@ -408,7 +419,6 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
-    if (editing?.id) loadDocs(editing.id);
     setActiveTab('details');
   }, [editing?.id]);
 
@@ -440,11 +450,6 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     setProjectCounts(counts);
   };
 
-  const loadDocs = async (id) => {
-    const { data } = await axios.get(API + '/api/documents/' + id);
-    setDocs(data);
-  };
-
   const save = async () => {
     if (editing.id) await supabase.from('projects').update(editing).eq('id', editing.id);
     else await supabase.from('projects').insert({ ...editing, user_id: session.user.id });
@@ -456,19 +461,6 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     await supabase.from('projects').delete().eq('id', id);
     if (activeProject?.id === id) setActiveProject(null);
     load();
-  };
-
-  const uploadDoc = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file); fd.append('projectId', editing.id); fd.append('userId', session.user.id);
-    await axios.post(API + '/api/documents/upload', fd);
-    loadDocs(editing.id); setUploading(false);
-  };
-
-  const delDoc = async (id) => {
-    await axios.delete(API + '/api/documents/' + id); loadDocs(editing.id);
   };
 
   const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
@@ -492,8 +484,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
       { id: 'details', label: 'Details' },
       { id: 'rules', label: 'Writing Rules' },
       ...(editing.id ? [
-        { id: 'documents', label: 'Documents' },
-        { id: 'library', label: 'Library' },
+        { id: 'library', label: 'Documents' },
         { id: 'memories', label: 'Memories' },
         { id: 'history', label: 'History' },
       ] : []),
@@ -577,32 +568,13 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             </>
           )}
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
-          {activeTab === 'documents' && editing.id && (
-            <>
-              <label className='btn btn-secondary' style={{ cursor: 'pointer', marginBottom: 12, display: 'inline-block' }}>
-                {uploading ? 'Uploading...' : 'Upload document (PDF, DOCX, TXT)'}
-                <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={uploadDoc} />
-              </label>
-              {docs.map(d => (
-                <div key={d.id} className='card'
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div className='card-title'>{d.filename}</div>
-                    <div className='card-meta'>{new Date(d.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => delDoc(d.id)}>Remove</button>
-                </div>
-              ))}
-              {docs.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded yet.</p>}
-            </>
-          )}
           {activeTab === 'library' && editing.id && <ProjectLibraryTab projectId={editing.id} />}
           {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
             <ProjectHistoryTab projectId={editing.id} setActiveSessionId={setActiveSessionId}
               setView={setView} onClose={() => setEditing(null)} />
           )}
-          {activeTab !== 'memories' && activeTab !== 'history' && (
+          {activeTab !== 'memories' && activeTab !== 'history' && activeTab !== 'library' && (
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
               <button className='btn btn-primary' onClick={save}>Save</button>
               <button className='btn btn-secondary' onClick={() => setEditing(null)}>Cancel</button>
