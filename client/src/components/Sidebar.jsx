@@ -47,10 +47,8 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
 
   useEffect(() => {
     if (!session) return;
-    supabase.from('sessions')
-      .select('id, title, created_at, project_id')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
+    // Use RPC to only fetch sessions that have at least one message
+    supabase.rpc('get_sessions_with_messages', { p_user_id: session.user.id })
       .limit(60)
       .then(({ data }) => { if (data) setSessions(data); });
 
@@ -61,7 +59,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .then(({ data }) => { if (data) setProjects(data); });
   }, [session, activeSessionId]);
 
-  // Keep filter pill in sync when activeProject changes externally
   useEffect(() => {
     if (!activeProject) setProjectFilter('all');
     else setProjectFilter(activeProject.id);
@@ -137,8 +134,7 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
                 {p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name}
               </button>
               {subProjects.filter(sp => sp.parent_id === p.id).map(sp => (
-                <button
-                  key={sp.id}
+                <button key={sp.id}
                   className={`project-filter-pill project-filter-pill-sub ${projectFilter === sp.id ? 'active' : ''}`}
                   onClick={() => handleProjectPill(sp.id)}>
                   ↳ {sp.name.length > 15 ? sp.name.slice(0, 15) + '…' : sp.name}
@@ -154,9 +150,10 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
               {group.sessions.map(s => (
                 <div key={s.id}
                   className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
+                  title={(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   onClick={() => handleSession(s.id)}>
                   <span className='session-title'>{s.title || 'New session'}</span>
-                  <span className='session-time'>{formatTime(s.created_at)}</span>
+                  <span className='session-time' style={{ flexShrink: 0 }}>{formatTime(s.created_at)}</span>
                 </div>
               ))}
             </div>
