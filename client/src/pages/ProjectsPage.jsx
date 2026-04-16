@@ -365,8 +365,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                 </select>
               </div>
               <div className='form-group'>
-                <label className='form-label'>Background and Context</label>
-                <textarea className='form-textarea' value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} />
+                <label className='form-label'>Short Description</label>
+                <textarea className='form-textarea' style={{ minHeight: 60 }} value={editing.description}
+                  onChange={e => setEditing(p => ({ ...p, description: e.target.value }))}
+                  placeholder='1-2 sentences describing what this project is about.' />
               </div>
               <div className='form-group'>
                 <label className='form-label'>Objectives</label>
@@ -429,16 +431,18 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {subs.length > 0 && (
-                    <button
-                      onClick={() => toggleExpand(p.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1, flexShrink: 0, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                    >
+                    <button onClick={() => toggleExpand(p.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1, flexShrink: 0, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                       ▶
                     </button>
                   )}
                   <div className='card-title'>{p.name}</div>
                 </div>
-                {p.description && <div className='card-meta' style={{ marginTop: 2 }}>{p.description.slice(0, 100)}</div>}
+                {p.description && (
+                  <div className='card-meta' style={{ marginTop: 2 }}>
+                    {p.description.slice(0, 160)}{p.description.length > 160 ? '...' : ''}
+                  </div>
+                )}
                 <CountBar projectId={p.id} subCount={subs.length} />
                 <ProjectTags p={p} />
               </div>
@@ -464,7 +468,11 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
                     <div className='card-title'>{sp.name}</div>
                   </div>
-                  {sp.description && <div className='card-meta' style={{ marginTop: 2 }}>{sp.description.slice(0, 100)}</div>}
+                  {sp.description && (
+                    <div className='card-meta' style={{ marginTop: 2 }}>
+                      {sp.description.slice(0, 160)}{sp.description.length > 160 ? '...' : ''}
+                    </div>
+                  )}
                   <CountBar projectId={sp.id} subCount={0} />
                   <ProjectTags p={sp} />
                 </div>
