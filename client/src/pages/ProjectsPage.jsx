@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import axios from 'axios';
 
-const API = import.meta.env.VITE_API_URL;
 const blank = { name: '', description: '', objectives: '', custom_instructions: '', high_scrutiny: false, profile_override: false, parent_id: null, prompt_rules: [] };
-
-const CATS = ['Framework', 'Legislation', 'Best Practice', 'Consulting', 'Contract', 'Skills', 'Templates', 'Organisation', 'Communication'];
 
 const RULES = [
   {
@@ -63,15 +59,12 @@ const RULES = [
 function ProjectRulesTab({ editing, setEditing }) {
   const [openCategories, setOpenCategories] = useState({});
   const projectRules = editing.prompt_rules || [];
-
   const toggleCategory = (cat) => setOpenCategories(o => ({ ...o, [cat]: !o[cat] }));
-
   const getState = (id) => {
     if (projectRules.includes(id + ':on')) return 'on';
     if (projectRules.includes(id + ':off')) return 'off';
     return 'inherit';
   };
-
   const cycleRule = (id) => {
     const current = getState(id);
     const filtered = projectRules.filter(r => !r.startsWith(id + ':'));
@@ -79,22 +72,18 @@ function ProjectRulesTab({ editing, setEditing }) {
     else if (current === 'on') setEditing(p => ({ ...p, prompt_rules: [...filtered, id + ':off'] }));
     else setEditing(p => ({ ...p, prompt_rules: filtered }));
   };
-
   const stateLabel = (state) => {
     if (state === 'on') return { label: 'On', bg: 'var(--accent)', color: 'white' };
     if (state === 'off') return { label: 'Off', bg: 'var(--danger)', color: 'white' };
     return { label: 'Inherit', bg: 'var(--surface)', color: 'var(--text-muted)' };
   };
-
   const overrideCount = projectRules.length;
-
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
         Each rule can be set to <strong>Inherit</strong> (use profile setting), <strong>On</strong> (force active for this project), or <strong>Off</strong> (force inactive). Click a rule to cycle through states.
         {overrideCount > 0 && (
-          <span style={{ marginLeft: 8, fontSize: 11, background: 'var(--accent)', color: 'white',
-            padding: '1px 7px', borderRadius: 10, fontWeight: 500 }}>
+          <span style={{ marginLeft: 8, fontSize: 11, background: 'var(--accent)', color: 'white', padding: '1px 7px', borderRadius: 10, fontWeight: 500 }}>
             {overrideCount} override{overrideCount > 1 ? 's' : ''}
           </span>
         )}
@@ -103,28 +92,18 @@ function ProjectRulesTab({ editing, setEditing }) {
         const isOpen = !!openCategories[cat.category];
         const catOverrides = cat.rules.filter(r => getState(r.id) !== 'inherit').length;
         return (
-          <div key={cat.category} style={{ marginBottom: 4, border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+          <div key={cat.category} style={{ marginBottom: 4, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
             <div onClick={() => toggleCategory(cat.category)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px', cursor: 'pointer', background: isOpen ? 'var(--surface)' : 'var(--bg)',
-                transition: 'background 0.15s', userSelect: 'none' }}>
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: 'pointer', background: isOpen ? 'var(--surface)' : 'var(--bg)', transition: 'background 0.15s', userSelect: 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-                  letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>
-                  {cat.category}
-                </span>
+                <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>{cat.category}</span>
                 {catOverrides > 0 && (
-                  <span style={{ fontSize: 10, background: 'var(--accent)', color: 'white',
-                    padding: '1px 6px', borderRadius: 10, fontWeight: 500 }}>
+                  <span style={{ fontSize: 10, background: 'var(--accent)', color: 'white', padding: '1px 6px', borderRadius: 10, fontWeight: 500 }}>
                     {catOverrides} override{catOverrides > 1 ? 's' : ''}
                   </span>
                 )}
               </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-block',
-                transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
-                ▼
-              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
             </div>
             {isOpen && (
               <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)' }}>
@@ -133,16 +112,9 @@ function ProjectRulesTab({ editing, setEditing }) {
                   const badge = stateLabel(state);
                   return (
                     <div key={rule.id} onClick={() => cycleRule(rule.id)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '8px 10px', borderRadius: 'var(--radius)', cursor: 'pointer', marginBottom: 4,
-                        background: state !== 'inherit' ? 'rgba(0,145,164,0.04)' : 'transparent',
-                        border: '1px solid ' + (state !== 'inherit' ? 'var(--border)' : 'transparent'),
-                        transition: 'all 0.15s' }}>
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 'var(--radius)', cursor: 'pointer', marginBottom: 4, background: state !== 'inherit' ? 'rgba(0,145,164,0.04)' : 'transparent', border: '1px solid ' + (state !== 'inherit' ? 'var(--border)' : 'transparent'), transition: 'all 0.15s' }}>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{rule.label}</span>
-                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
-                        background: badge.bg, color: badge.color, flexShrink: 0, marginLeft: 12 }}>
-                        {badge.label}
-                      </span>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: badge.bg, color: badge.color, flexShrink: 0, marginLeft: 12 }}>{badge.label}</span>
                     </div>
                   );
                 })}
@@ -155,182 +127,43 @@ function ProjectRulesTab({ editing, setEditing }) {
   );
 }
 
-function ProjectLibraryTab({ projectId }) {
-  const [libDocs, setLibDocs] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [form, setForm] = useState({ title: '', category: 'Skills', jurisdiction: 'Queensland', description: '', sourceUrl: '' });
-
-  const load = () => {
-    axios.get(API + '/api/library?projectId=' + projectId)
-      .then(r => setLibDocs(r.data))
-      .catch(() => setLibDocs([]));
-  };
-
-  useEffect(() => { load(); }, [projectId]);
-
-  const upload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
-    fd.append('projectId', projectId);
-    fd.append('file', file);
-    try {
-      await axios.post(API + '/api/library/upload', fd);
-      load();
-      setForm(f => ({ ...f, title: '', description: '', sourceUrl: '' }));
-      setUploadSuccess(true);
-      setTimeout(() => setUploadSuccess(false), 2000);
-    } catch { }
-    setUploading(false);
-    e.target.value = '';
-  };
-
-  const deleteDoc = async (id) => {
-    if (!confirm('Remove this document?')) return;
-    try {
-      await axios.delete(API + '/api/library/' + id);
-      load();
-    } catch { }
-  };
-
-  return (
-    <div>
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        Upload documents to this project. They will be injected as context whenever this project is active.
-      </div>
-      <div className='card' style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>Upload document</div>
-          {uploadSuccess && <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Uploaded</span>}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <div className='form-group' style={{ margin: 0 }}>
-            <label className='form-label'>Title</label>
-            <input className='form-input' value={form.title}
-              onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-          </div>
-          <div className='form-group' style={{ margin: 0 }}>
-            <label className='form-label'>Category</label>
-            <select className='form-select' value={form.category}
-              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-              {CATS.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className='form-group' style={{ margin: 0 }}>
-            <label className='form-label'>Jurisdiction</label>
-            <input className='form-input' value={form.jurisdiction}
-              onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} />
-          </div>
-          <div className='form-group' style={{ margin: 0 }}>
-            <label className='form-label'>Source URL (optional)</label>
-            <input className='form-input' value={form.sourceUrl}
-              onChange={e => setForm(f => ({ ...f, sourceUrl: e.target.value }))} />
-          </div>
-        </div>
-        <div className='form-group'>
-          <label className='form-label'>Description</label>
-          <input className='form-input' value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-        </div>
-        <label className='btn btn-primary' style={{ cursor: 'pointer', fontSize: 13 }}>
-          {uploading ? 'Uploading...' : 'Choose file and upload'}
-          <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={upload} />
-        </label>
-      </div>
-      {libDocs.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded to this project yet.</p>
-      )}
-      {libDocs.map(d => (
-        <div key={d.id} className='card'
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
-              <div className='card-title' style={{ margin: 0 }}>{d.title}</div>
-              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
-                background: 'var(--surface)', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                {d.category}
-              </span>
-            </div>
-            <div className='card-meta'>{d.jurisdiction}</div>
-            {d.description && (
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{d.description}</div>
-            )}
-          </div>
-          <button className='btn btn-danger' style={{ fontSize: 12, marginLeft: 12, flexShrink: 0 }}
-            onClick={() => deleteDoc(d.id)}>Remove</button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ProjectMemoriesTab({ projectId }) {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const load = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: projectSessions } = await supabase
-      .from('sessions').select('id').eq('project_id', projectId);
+    const { data: projectSessions } = await supabase.from('sessions').select('id').eq('project_id', projectId);
     const sessionIds = new Set((projectSessions || []).map(s => s.id));
-    const { data: allEmbeddings } = await supabase
-      .from('session_embeddings')
-      .select('id, content, created_at, session_id')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (allEmbeddings) {
-      setMemories(allEmbeddings.filter(m => m.session_id && sessionIds.has(m.session_id)));
-    }
+    const { data: allEmbeddings } = await supabase.from('session_embeddings').select('id, content, created_at, session_id').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (allEmbeddings) setMemories(allEmbeddings.filter(m => m.session_id && sessionIds.has(m.session_id)));
     setLoading(false);
   };
-
   useEffect(() => { load(); }, [projectId]);
-
-  const deleteMemory = async (id) => {
-    await supabase.from('session_embeddings').delete().eq('id', id);
-    load();
-  };
-
-  const formatContent = (content) => content
-    .replace('[PINNED NOTE] ', '').replace('[AUTO-CAPTURED] ', '').trim();
-
+  const deleteMemory = async (id) => { await supabase.from('session_embeddings').delete().eq('id', id); load(); };
+  const formatContent = (content) => content.replace('[PINNED NOTE] ', '').replace('[AUTO-CAPTURED] ', '').trim();
   const getTag = (content) => {
     if (content.startsWith('[PINNED NOTE]')) return { label: 'Pinned', color: 'var(--accent)' };
     if (content.startsWith('[AUTO-CAPTURED]')) return { label: 'Auto-captured', color: '#2e7d32' };
     return { label: 'Memory', color: 'var(--text-muted)' };
   };
-
   if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading memories...</p>;
-
   return (
     <div>
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        Notes and memories the AI has captured from sessions in this project.
-      </div>
-      {memories.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No memories yet. They are created automatically as you work in this project.</p>
-      )}
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>Notes and memories the AI has captured from sessions in this project.</div>
+      {memories.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No memories yet. They are created automatically as you work in this project.</p>}
       {memories.map(m => {
         const tag = getTag(m.content);
         return (
-          <div key={m.id} className='card'
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div key={m.id} className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, color: tag.color, fontWeight: 600 }}>{tag.label}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {new Date(m.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(m.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                {formatContent(m.content)}
-              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>{formatContent(m.content)}</div>
             </div>
-            <button className='btn btn-danger' style={{ fontSize: 11, marginLeft: 12, flexShrink: 0 }}
-              onClick={() => deleteMemory(m.id)}>Delete</button>
+            <button className='btn btn-danger' style={{ fontSize: 11, marginLeft: 12, flexShrink: 0 }} onClick={() => deleteMemory(m.id)}>Delete</button>
           </div>
         );
       })}
@@ -341,15 +174,10 @@ function ProjectMemoriesTab({ projectId }) {
 function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: projectSessions } = await supabase
-        .from('sessions')
-        .select('id, title, summary, created_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
+      const { data: projectSessions } = await supabase.from('sessions').select('id, title, summary, created_at').eq('project_id', projectId).order('created_at', { ascending: false });
       const withMessages = await supabase.rpc('get_sessions_with_messages', { p_user_id: user.id });
       const messageSessionIds = new Set((withMessages.data || []).map(s => s.id));
       setSessions((projectSessions || []).filter(s => messageSessionIds.has(s.id)));
@@ -357,49 +185,33 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
     };
     load();
   }, [projectId]);
-
   const groupByDate = (sessions) => {
     const groups = {}; const order = [];
     for (const s of sessions) {
       const diffDays = Math.floor((new Date() - new Date(s.created_at)) / (1000 * 60 * 60 * 24));
-      const label = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Yesterday' : diffDays <= 7 ? 'This week' :
-        diffDays <= 30 ? 'This month' : new Date(s.created_at).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+      const label = diffDays === 0 ? 'Today' : diffDays === 1 ? 'Yesterday' : diffDays <= 7 ? 'This week' : diffDays <= 30 ? 'This month' : new Date(s.created_at).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
       if (!groups[label]) { groups[label] = []; order.push(label); }
       groups[label].push(s);
     }
     return order.map(g => ({ label: g, sessions: groups[g] }));
   };
-
   const openSession = (sessionId) => { setActiveSessionId(sessionId); setView('chat'); onClose(); };
-
   if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading sessions...</p>;
   if (sessions.length === 0) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
-
   return (
     <div>
-      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        All sessions linked to this project. Click a session to open it.
-      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>All sessions linked to this project. Click a session to open it.</div>
       {groupByDate(sessions).map(group => (
         <div key={group.label} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-            letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>
-            {group.label}
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>{group.label}</div>
           {group.sessions.map(s => (
             <div key={s.id} className='card' onClick={() => openSession(s.id)} style={{ cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className='card-title' style={{ marginBottom: 4 }}>{s.title || 'Untitled session'}</div>
-                  {s.summary && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      {s.summary.slice(0, 120)}{s.summary.length > 120 ? '...' : ''}
-                    </div>
-                  )}
+                  {s.summary && <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{s.summary.slice(0, 120)}{s.summary.length > 120 ? '...' : ''}</div>}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 12, flexShrink: 0 }}>
-                  {new Date(s.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 12, flexShrink: 0 }}>{new Date(s.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
               </div>
             </div>
           ))}
@@ -417,14 +229,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const [projectCounts, setProjectCounts] = useState({});
 
   useEffect(() => { load(); }, []);
-
-  useEffect(() => {
-    setActiveTab('details');
-  }, [editing?.id]);
+  useEffect(() => { setActiveTab('details'); }, [editing?.id]);
 
   const load = async () => {
-    const { data } = await supabase.from('projects').select('*')
-      .eq('user_id', session.user.id).order('name');
+    const { data } = await supabase.from('projects').select('*').eq('user_id', session.user.id).order('name');
     if (data) { setProjects(data); loadCounts(data.map(p => p.id)); }
   };
 
@@ -484,7 +292,6 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
       { id: 'details', label: 'Details' },
       { id: 'rules', label: 'Writing Rules' },
       ...(editing.id ? [
-        { id: 'library', label: 'Documents' },
         { id: 'memories', label: 'Memories' },
         { id: 'history', label: 'History' },
       ] : []),
@@ -507,11 +314,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
         <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent',
-                cursor: 'pointer', borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+              style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent', cursor: 'pointer',
+                borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
                 color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
-                fontWeight: activeTab === tab.id ? 600 : 400, marginBottom: -1,
-                transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+                fontWeight: activeTab === tab.id ? 600 : 400, marginBottom: -1, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
               {tab.label}
             </button>
           ))}
@@ -522,13 +328,11 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             <>
               <div className='form-group'>
                 <label className='form-label'>Project Name</label>
-                <input className='form-input' value={editing.name}
-                  onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} />
+                <input className='form-input' value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} />
               </div>
               <div className='form-group'>
                 <label className='form-label'>Parent Project (optional)</label>
-                <select className='form-select' value={editing.parent_id || ''}
-                  onChange={e => setEditing(p => ({ ...p, parent_id: e.target.value || null }))}>
+                <select className='form-select' value={editing.parent_id || ''} onChange={e => setEditing(p => ({ ...p, parent_id: e.target.value || null }))}>
                   <option value=''>None -- top level project</option>
                   {topLevelOptions.filter(p => p.id !== editing.id).map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -537,44 +341,34 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               </div>
               <div className='form-group'>
                 <label className='form-label'>Background and Context</label>
-                <textarea className='form-textarea' value={editing.description}
-                  onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} />
+                <textarea className='form-textarea' value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} />
               </div>
               <div className='form-group'>
                 <label className='form-label'>Objectives</label>
-                <textarea className='form-textarea' value={editing.objectives}
-                  onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))} />
+                <textarea className='form-textarea' value={editing.objectives} onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))} />
               </div>
               <div className='form-group'>
                 <label className='form-label'>Custom AI Instructions</label>
-                <textarea className='form-textarea' value={editing.custom_instructions}
-                  onChange={e => setEditing(p => ({ ...p, custom_instructions: e.target.value }))}
-                  placeholder='Specific guidance for AI responses on this project' />
+                <textarea className='form-textarea' value={editing.custom_instructions} onChange={e => setEditing(p => ({ ...p, custom_instructions: e.target.value }))} placeholder='Specific guidance for AI responses on this project' />
               </div>
               <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
-                  color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                  <input type='checkbox' checked={editing.high_scrutiny}
-                    onChange={e => setEditing(p => ({ ...p, high_scrutiny: e.target.checked }))} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                  <input type='checkbox' checked={editing.high_scrutiny} onChange={e => setEditing(p => ({ ...p, high_scrutiny: e.target.checked }))} />
                   High scrutiny mode
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
-                  color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                  <input type='checkbox' checked={editing.profile_override}
-                    onChange={e => setEditing(p => ({ ...p, profile_override: e.target.checked }))} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                  <input type='checkbox' checked={editing.profile_override} onChange={e => setEditing(p => ({ ...p, profile_override: e.target.checked }))} />
                   Project overrides profile
                 </label>
               </div>
             </>
           )}
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
-          {activeTab === 'library' && editing.id && <ProjectLibraryTab projectId={editing.id} />}
           {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
-            <ProjectHistoryTab projectId={editing.id} setActiveSessionId={setActiveSessionId}
-              setView={setView} onClose={() => setEditing(null)} />
+            <ProjectHistoryTab projectId={editing.id} setActiveSessionId={setActiveSessionId} setView={setView} onClose={() => setEditing(null)} />
           )}
-          {activeTab !== 'memories' && activeTab !== 'history' && activeTab !== 'library' && (
+          {activeTab !== 'memories' && activeTab !== 'history' && (
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
               <button className='btn btn-primary' onClick={save}>Save</button>
               <button className='btn btn-secondary' onClick={() => setEditing(null)}>Cancel</button>
@@ -610,16 +404,13 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {subs.length > 0 && (
-                    <button onClick={() => toggleExpand(p.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11,
-                        color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
+                    <button onClick={() => toggleExpand(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
                       {isExpanded ? '▼' : '▶'}
                     </button>
                   )}
                   <div className='card-title'>{p.name}</div>
                   {subs.length > 0 && (
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--surface)',
-                      padding: '1px 6px', borderRadius: 10 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--surface)', padding: '1px 6px', borderRadius: 10 }}>
                       {subs.length} sub-project{subs.length > 1 ? 's' : ''}
                     </span>
                   )}
@@ -633,15 +424,12 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                   ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
                   : <button className='btn btn-primary' style={{ fontSize: 12 }} onClick={() => { setActiveProject(p); setView('chat'); }}>Use</button>
                 }
-                <button className='btn btn-secondary' style={{ fontSize: 12 }}
-                  onClick={() => setEditing({ ...blank, parent_id: p.id })}>+ Sub</button>
+                <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing({ ...blank, parent_id: p.id })}>+ Sub</button>
                 <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => del(p.id)}>Delete</button>
               </div>
             </div>
             {isExpanded && subs.map(sp => (
-              <div key={sp.id} className='card' style={{ display: 'flex', justifyContent: 'space-between',
-                alignItems: 'flex-start', marginLeft: 24, borderLeft: '2px solid var(--accent)',
-                borderRadius: '0 6px 6px 0' }}>
+              <div key={sp.id} className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginLeft: 24, borderLeft: '2px solid var(--accent)', borderRadius: '0 6px 6px 0' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
