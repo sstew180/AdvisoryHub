@@ -39,7 +39,7 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
 .sidebar-section { padding: 10px 16px 2px; font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
 .session-item { padding: 4px 16px; font-size: 12px; color: var(--text-secondary);
-  cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; display: flex; align-items: center;
   gap: 8px; transition: background 0.1s; position: relative; }
 .session-item:hover { background: var(--surface); }
 .session-item.active { color: var(--text-primary); font-weight: 500; }
@@ -48,15 +48,7 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
 .session-time { font-size: 10px; color: var(--text-muted); flex-shrink: 0; white-space: nowrap; }
 .sidebar-sessions { flex: 1; overflow-y: auto; }
 
-/* Session tooltip */
-.session-item .session-tooltip {
-  display: none; position: absolute; left: 16px; bottom: calc(100% + 4px);
-  background: var(--text-primary); color: white; font-size: 11px;
-  padding: 4px 8px; border-radius: 4px; white-space: nowrap; z-index: 100;
-  pointer-events: none; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.session-item:hover .session-tooltip { display: block; }
-
-/* Session three-dot menu */
+/* Session three-dot menu button */
 .session-menu-btn {
   background: none;
   border: none;
@@ -65,40 +57,11 @@ body { font-family: var(--font); background: var(--surface); color: var(--text-p
   font-size: 14px;
   padding: 0 2px;
   line-height: 1;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
   flex-shrink: 0;
   letter-spacing: 2px;
-}
-.session-item:hover .session-menu-btn { opacity: 1; }
-.session-menu-btn:hover { color: var(--text-primary); }
-
-.session-menu-dropdown {
-  position: absolute;
-  right: 8px;
-  top: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 200;
-  min-width: 160px;
-  overflow: hidden;
-}
-.session-menu-dropdown button {
-  display: block;
-  width: 100%;
-  padding: 8px 14px;
-  text-align: left;
-  background: none;
-  border: none;
-  font-size: 13px;
   font-family: var(--font);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.1s;
 }
-.session-menu-dropdown button:hover { background: var(--surface); }
+.session-menu-btn:hover { color: var(--text-primary); }
 
 /* Project filter pills */
 .project-filter { padding: 8px 12px; border-bottom: 1px solid var(--border);
