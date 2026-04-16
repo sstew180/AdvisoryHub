@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import axios from 'axios';
 
+const API = import.meta.env.VITE_API_URL;
 const blank = { name: '', description: '', objectives: '', custom_instructions: '', high_scrutiny: false, profile_override: false, parent_id: null, prompt_rules: [] };
 
 const RULES = [
@@ -232,7 +234,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   useEffect(() => { setActiveTab('details'); }, [editing?.id]);
 
   const load = async () => {
-    const { data } = await supabase.from('projects').select('*').eq('user_id', session.user.id).order('name');
+    const { data } = await supabase.from('projects').select('*')
+      .eq('user_id', session.user.id)
+      .is('archived_at', null)
+      .order('name');
     if (data) { setProjects(data); loadCounts(data.map(p => p.id)); }
   };
 
@@ -268,10 +273,20 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   };
 
   const del = async (id) => {
-    if (!confirm('Delete this project?')) return;
+    if (!confirm('Delete this project? This cannot be undone.')) return;
     await supabase.from('projects').delete().eq('id', id);
     if (activeProject?.id === id) setActiveProject(null);
     load();
+  };
+
+  const archive = async (id) => {
+    try {
+      await axios.patch(`${API}/api/projects/${id}/archive`, { userId: session.user.id });
+      if (activeProject?.id === id) setActiveProject(null);
+      load();
+    } catch (err) {
+      console.error('Archive project error:', err);
+    }
   };
 
   const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
@@ -372,13 +387,15 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               </div>
               <div className='form-group'>
                 <label className='form-label'>Background and Context</label>
-<textarea className='form-textarea' value={editing.objectives}
-  onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))}
-  placeholder="Detailed context for the AI: stakeholders, constraints, current status,relevant history." />
+                <textarea className='form-textarea' value={editing.objectives}
+                  onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))}
+                  placeholder="Detailed context for the AI: stakeholders, constraints, current status, relevant history." />
               </div>
               <div className='form-group'>
                 <label className='form-label'>Custom AI Instructions</label>
-                <textarea className='form-textarea' value={editing.custom_instructions} onChange={e => setEditing(p => ({ ...p, custom_instructions: e.target.value }))} placeholder='Specific guidance for AI responses on this project' />
+                <textarea className='form-textarea' value={editing.custom_instructions}
+                  onChange={e => setEditing(p => ({ ...p, custom_instructions: e.target.value }))}
+                  placeholder='Specific guidance for AI responses on this project' />
               </div>
               <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
@@ -455,6 +472,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                   : <button className='btn btn-primary' style={{ fontSize: 12 }} onClick={() => { setActiveProject(p); setView('chat'); }}>Use</button>
                 }
                 <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing({ ...blank, parent_id: p.id })}>+ Sub</button>
+                <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => archive(p.id)}>Archive</button>
                 <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => del(p.id)}>Delete</button>
               </div>
             </div>
@@ -484,6 +502,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                     ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
                     : <button className='btn btn-primary' style={{ fontSize: 12 }} onClick={() => { setActiveProject(sp); setView('chat'); }}>Use</button>
                   }
+                  <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => archive(sp.id)}>Archive</button>
                   <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => del(sp.id)}>Delete</button>
                 </div>
               </div>
