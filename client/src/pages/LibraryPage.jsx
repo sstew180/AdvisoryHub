@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import axios from 'axios';
 
 const API = import.meta.env.VITE_API_URL;
-const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
+const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Contract', 'Skills', 'Templates', 'Organisation', 'Communication'];
 const EMPTY_FORM = { title: '', category: 'Framework', domain: 'Risk & Audit', jurisdiction: 'Queensland', description: '', sourceUrl: '', projectId: '' };
 
 export default function LibraryPage({ session, onMenuOpen }) {
@@ -93,6 +93,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
       'Legislation': { bg: '#fdf0e8', color: '#c67a2e' },
       'Best Practice': { bg: '#eaf4ea', color: '#2e7d32' },
       'Consulting': { bg: '#f3eafa', color: '#6a3aab' },
+      'Contract': { bg: '#fef3e8', color: '#b85c00' },
       'Skills': { bg: '#e8f0fa', color: '#1a5cb5' },
       'Templates': { bg: '#fdf5e8', color: '#b57a1a' },
       'Organisation': { bg: '#fae8e8', color: '#b52a2a' },
@@ -119,7 +120,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
         )}
       </div>
 
-      {/* View content modal */}
       {viewingDoc && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}

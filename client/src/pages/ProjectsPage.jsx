@@ -5,7 +5,7 @@ import axios from 'axios';
 const API = import.meta.env.VITE_API_URL;
 const blank = { name: '', description: '', objectives: '', custom_instructions: '', high_scrutiny: false, profile_override: false, parent_id: null, prompt_rules: [] };
 
-const CATS = ['Framework', 'Legislation', 'Best Practice', 'Consulting', 'Skills', 'Templates', 'Organisation', 'Communication'];
+const CATS = ['Framework', 'Legislation', 'Best Practice', 'Consulting', 'Contract', 'Skills', 'Templates', 'Organisation', 'Communication'];
 
 const RULES = [
   {
