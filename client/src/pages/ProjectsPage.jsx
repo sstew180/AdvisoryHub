@@ -371,8 +371,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                   placeholder='1-2 sentences describing what this project is about.' />
               </div>
               <div className='form-group'>
-                <label className='form-label'>Objectives</label>
-                <textarea className='form-textarea' value={editing.objectives} onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))} />
+                <label className='form-label'>Background and Context</label>
+<textarea className='form-textarea' value={editing.objectives}
+  onChange={e => setEditing(p => ({ ...p, objectives: e.target.value }))}
+  placeholder='Detailed context for the AI: stakeholders, constraints, current status,
               </div>
               <div className='form-group'>
                 <label className='form-label'>Custom AI Instructions</label>
