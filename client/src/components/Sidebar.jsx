@@ -47,7 +47,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
 
   useEffect(() => {
     if (!session) return;
-    // Use RPC to only fetch sessions that have at least one message
     supabase.rpc('get_sessions_with_messages', { p_user_id: session.user.id })
       .limit(60)
       .then(({ data }) => { if (data) setSessions(data); });
@@ -76,22 +75,28 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
     onClose && onClose();
   };
 
+  const topLevel = projects.filter(p => !p.parent_id);
+  const subProjects = projects.filter(p => p.parent_id);
+
   const handleProjectPill = (projectId) => {
     setProjectFilter(projectId);
     if (projectId === 'all' || projectId === 'none') {
       setActiveProject(null);
-    } else {
-      const fullProject = projects.find(p => p.id === projectId);
-      if (fullProject) setActiveProject(fullProject);
+      return;
     }
+    const fullProject = projects.find(p => p.id === projectId);
+    if (fullProject) setActiveProject(fullProject);
   };
-
-  const topLevel = projects.filter(p => !p.parent_id);
-  const subProjects = projects.filter(p => p.parent_id);
 
   const filteredSessions = sessions.filter(s => {
     if (projectFilter === 'all') return true;
     if (projectFilter === 'none') return !s.project_id;
+
+    // Check if the filter is a sub-project -- show only that sub-project's sessions
+    const filterIsSubProject = subProjects.some(sp => sp.id === projectFilter);
+    if (filterIsSubProject) return s.project_id === projectFilter;
+
+    // Filter is a top-level project -- show sessions from it AND all its sub-projects
     if (s.project_id === projectFilter) return true;
     const sub = subProjects.find(sp => sp.id === s.project_id);
     return sub?.parent_id === projectFilter;
@@ -152,6 +157,9 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
                   className={`session-item ${activeSessionId === s.id ? 'active' : ''}`}
                   title={(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   onClick={() => handleSession(s.id)}>
+                  <span className='session-tooltip'>
+                    {(s.title || 'New session') + ' · ' + new Date(s.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
                   <span className='session-title'>{s.title || 'New session'}</span>
                   <span className='session-time' style={{ flexShrink: 0 }}>{formatTime(s.created_at)}</span>
                 </div>
