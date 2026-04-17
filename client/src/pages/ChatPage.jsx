@@ -356,17 +356,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
-    const el = textareaRef.current;
-    const prev = input;
-    const next = prev ? prev + ' ' + transcript : transcript;
-    setInput(next);
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-      el.focus();
-    }
-    // Call send directly with the transcript text -- bypasses stale closure
-    send(next);
+    setInput(prev => prev ? prev + ' ' + transcript : transcript);
+    setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
   const handleArchiveSession = async () => {
@@ -425,9 +416,9 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setDownloading(false);
   };
 
-  const send = async (overrideText) => {
-    const text = (overrideText || input).trim();
-    if (!text || streaming) return;
+  const send = async () => {
+    if (!input.trim() || streaming) return;
+    const text = input.trim();
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
