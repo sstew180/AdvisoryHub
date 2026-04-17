@@ -12,8 +12,8 @@ import ArchivePage from './pages/ArchivePage';
 const API = import.meta.env.VITE_API_URL;
 
 const FUTURE_MODULES = [
+  { name: 'Procurement' },
   { name: 'Asset Management' },
-  { name: 'Contract Management' },
   { name: 'Cyber Security' },
   { name: 'Insurance' },
   { name: 'Council and Policymaking' },
@@ -21,6 +21,7 @@ const FUTURE_MODULES = [
   { name: 'Safety' },
   { name: 'Communications' },
   { name: 'Financial Management' },
+  { name: 'Technology Management' },
 ];
 
 export default function App() {
