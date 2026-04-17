@@ -47,6 +47,7 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   const [projectFilter, setProjectFilter] = useState('all');
   const [expandedProjectId, setExpandedProjectId] = useState(null);
   const [sessionMenuId, setSessionMenuId] = useState(null);
+  const [firstName, setFirstName] = useState('');
 
   const loadSessions = () => {
     supabase.rpc('get_sessions_with_messages', { p_user_id: session.user.id })
@@ -62,6 +63,12 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .eq('user_id', session.user.id)
       .order('name')
       .then(({ data }) => { if (data) setProjects(data); });
+    // Load first name for greeting
+    supabase.from('profiles')
+      .select('first_name')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data }) => { if (data?.first_name) setFirstName(data.first_name); });
   }, [session, activeSessionId]);
 
   const topLevel = projects.filter(p => !p.parent_id);
@@ -151,7 +158,14 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       <div className={`sidebar-overlay ${isOpen ? 'visible' : ''}`} onClick={onClose} />
       <div className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}>
         <div className='sidebar-header'>
-          <span className='sidebar-logo'>AdvisoryHub</span>
+          <div>
+            <span className='sidebar-logo'>AdvisoryHub</span>
+            {firstName && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Hi {firstName}
+              </div>
+            )}
+          </div>
         </div>
         <nav className='sidebar-nav'>
           {NAV.map(item => (

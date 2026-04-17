@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 
 export default function ProfilePage({ session, onMenuOpen, setView }) {
   const [profile, setProfile] = useState({
+    first_name: '', last_name: '',
     role: '', service_area: '', goals: '', organisation: 'City of Gold Coast',
     preferences: '', high_scrutiny: false
   });
@@ -37,6 +38,19 @@ export default function ProfilePage({ session, onMenuOpen, setView }) {
         <div className='page-title' style={{ margin: 0 }}>Profile</div>
       </div>
       <div className='page-content'>
+        {/* Name row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>First Name</label>
+            <input className='form-input' value={profile.first_name || ''}
+              onChange={e => u('first_name', e.target.value)} placeholder='e.g. Scott' />
+          </div>
+          <div className='form-group' style={{ margin: 0 }}>
+            <label className='form-label'>Last Name</label>
+            <input className='form-input' value={profile.last_name || ''}
+              onChange={e => u('last_name', e.target.value)} placeholder='e.g. Stewart' />
+          </div>
+        </div>
         <div className='form-group'>
           <label className='form-label'>Role</label>
           <input className='form-input' value={profile.role}
