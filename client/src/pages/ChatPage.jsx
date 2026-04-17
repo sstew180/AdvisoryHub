@@ -429,12 +429,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    // Read from DOM directly to avoid stale closure issues after voice input
-    const text = (textareaRef.current?.value || inputRef.current || input).trim();
+    // inputRef.current is always up to date -- avoids stale closure from React state
+    const text = inputRef.current.trim();
     if (!text || streaming) return;
-    setInput('');
     inputRef.current = '';
-    if (textareaRef.current) { textareaRef.current.value = ''; textareaRef.current.style.height = 'auto'; }
+    setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
