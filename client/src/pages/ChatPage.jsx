@@ -209,30 +209,38 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   );
 }
 
-// Mic button component using Web Speech API
+// Mic button component using Web Speech API -- continuous mode
 function MicButton({ onTranscript, disabled }) {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
-  const supported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+  const supported = typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  const stop = () => {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+  };
 
   const toggle = () => {
     if (!supported) return;
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      return;
-    }
+    if (listening) { stop(); return; }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new SR();
     rec.lang = 'en-AU';
+    rec.continuous = true;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      onTranscript(transcript);
+      // Accumulate all new results from this event
+      let transcript = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) transcript += e.results[i][0].transcript + ' ';
+      }
+      if (transcript.trim()) onTranscript(transcript.trim());
     };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
+    rec.onerror = () => { setListening(false); recognitionRef.current = null; };
+    rec.onend = () => { setListening(false); recognitionRef.current = null; };
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
@@ -244,7 +252,7 @@ function MicButton({ onTranscript, disabled }) {
     <button
       onClick={toggle}
       disabled={disabled}
-      title={listening ? 'Stop recording' : 'Speak your prompt'}
+      title={listening ? 'Tap to stop recording' : 'Speak your prompt'}
       style={{
         background: 'none', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
         padding: '2px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -281,6 +289,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(''); // mirrors input state for use in async send
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -347,7 +356,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input (don't overwrite)
   const handleTranscript = (transcript) => {
-    setInput(prev => prev ? prev + ' ' + transcript : transcript);
+    setInput(prev => {
+      const next = prev ? prev + ' ' + transcript : transcript;
+      inputRef.current = next;
+      return next;
+    });
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
@@ -408,9 +421,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    if (!input.trim() || streaming) return;
-    const text = input.trim();
+    const text = (inputRef.current || input).trim();
+    if (!text || streaming) return;
     setInput('');
+    inputRef.current = '';
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
@@ -703,7 +717,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 ref={textareaRef}
                 className='input-textarea'
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => { setInput(e.target.value); inputRef.current = e.target.value; }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
                 rows={1}
@@ -733,7 +747,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                       {downloading ? '...' : '↓ Doc'}
                     </button>
                   )}
-                  <button className='send-btn' onClick={send} disabled={streaming || !input.trim()}>
+                  <button className='send-btn' onClick={send} disabled={streaming || !(inputRef.current || input).trim()}>
                     {streaming ? '...' : 'Send'}
                   </button>
                 </div>
