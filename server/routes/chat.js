@@ -177,6 +177,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   const userId = req.body.userId;
   const sessionId = req.body.sessionId;
   const projectId = req.body.projectId || null;
+  const moduleId = req.body.moduleId || null;
   const mode = req.body.mode;
   const ruleOverrides = req.body.ruleOverrides ? JSON.parse(req.body.ruleOverrides) : {};
   const formatControls = req.body.formatControls ? JSON.parse(req.body.formatControls) : {};
@@ -208,6 +209,17 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+
+    // Load active module and persona
+    let activeModule = null;
+    let activePersona = null;
+    if (moduleId) {
+      const { data: mod } = await supabase.from('modules').select('*').eq('id', moduleId).single();
+      activeModule = mod;
+      const { data: persona } = await supabase.from('personas')
+        .select('*').eq('user_id', userId).eq('module_id', moduleId).single();
+      activePersona = persona;
+    }
 
     let project = null;
     let parentProject = null;
@@ -331,12 +343,16 @@ router.post('/', upload.single('file'), async (req, res) => {
     const userDocs = userDocsRaw || [];
 
     const isGuided = mode !== 'direct';
-    const profileRules = profile?.prompt_rules || [];
+
+    // Rules: persona overrides profile if active, then project rules on top
+    const baseRules = activePersona?.prompt_rules || profile?.prompt_rules || [];
     const projectRules = project?.prompt_rules || [];
     const parentRules = parentProject?.prompt_rules || [];
     const mergedProjectRules = [...new Set([...parentRules, ...projectRules])];
 
     console.log('--- RAG context ---');
+    console.log('Module:', activeModule ? activeModule.name : 'none (fallback)');
+    console.log('Persona:', activePersona ? activePersona.role : 'none');
     console.log('Profile:', profile ? profile.role : 'none');
     console.log('Project:', project ? (parentProject ? parentProject.name + ' > ' + project.name : project.name) : 'none');
     console.log('Memories:', memories ? memories.length : 0);
@@ -348,9 +364,10 @@ router.post('/', upload.single('file'), async (req, res) => {
     console.log('-------------------');
 
     const systemPrompt = buildSystemPrompt(
-      profile, project, parentProject, memories, recentSessions,
+      profile, activeModule, activePersona,
+      project, parentProject, memories, recentSessions,
       resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
-      userDocs, isGuided, profileRules, mergedProjectRules,
+      userDocs, isGuided, baseRules, mergedProjectRules,
       ruleOverrides, formatControls
     );
 
@@ -377,12 +394,22 @@ router.post('/', upload.single('file'), async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, parentProject, memories, recentSessions, libraryDocs, skillDocs, templateDocs, orgDocs, userDocs, isGuided, profileRules, projectRules, promptOverrides, formatControls) {
-  let p = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
+function buildSystemPrompt(
+  profile, activeModule, activePersona,
+  project, parentProject, memories, recentSessions,
+  libraryDocs, skillDocs, templateDocs, orgDocs,
+  userDocs, isGuided, profileRules, projectRules,
+  promptOverrides, formatControls
+) {
+  // Use module identity if available, fall back to hardcoded default
+  const identity = activeModule?.system_prompt_identity ||
+    'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
     'You provide expert guidance drawing on best practice frameworks, Queensland legislation, ' +
     'and the Queensland Audit Office guidelines. You cite your sources when drawing on ' +
-    'retrieved documents. You write clearly and professionally.\n\n' +
+    'retrieved documents. You write clearly and professionally.';
+
+  let p = identity + '\n\n' +
     'TEMPLATE INSTRUCTION: When a template document is available in your context and the user ' +
     'requests a completed document, reproduce the full template structure with every section and ' +
     'field completed using information from the project context, memories, and conversation. ' +
@@ -394,14 +421,26 @@ function buildSystemPrompt(profile, project, parentProject, memories, recentSess
   p += buildRulesBlock(profileRules, projectRules, promptOverrides);
   p += buildFormatBlock(formatControls);
 
-  if (profile) {
+  // User profile block -- persona takes priority over profile for role/area/goals/preferences
+  const name = profile?.first_name
+    ? profile.first_name + (profile.last_name ? ' ' + profile.last_name : '')
+    : null;
+  const role = activePersona?.role || profile?.role;
+  const serviceArea = activePersona?.service_area || profile?.service_area;
+  const organisation = activePersona?.organisation || profile?.organisation;
+  const goals = activePersona?.goals || profile?.goals;
+  const preferences = activePersona?.preferences || profile?.preferences;
+  const highScrutiny = activePersona?.high_scrutiny || profile?.high_scrutiny;
+
+  if (name || role || serviceArea || organisation || goals) {
     p += '\n\n## User Profile';
-    if (profile.role) p += '\nRole: ' + profile.role;
-    if (profile.service_area) p += '\nService Area: ' + profile.service_area;
-    if (profile.organisation) p += '\nOrganisation: ' + profile.organisation;
-    if (profile.goals) p += '\nCurrent objectives: ' + profile.goals;
-    if (profile.preferences && isGuided) p += '\nCommunication style: ' + profile.preferences;
-    if (profile.high_scrutiny) p += '\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.';
+    if (name) p += '\nName: ' + name;
+    if (role) p += '\nRole: ' + role;
+    if (serviceArea) p += '\nService Area: ' + serviceArea;
+    if (organisation) p += '\nOrganisation: ' + organisation;
+    if (goals) p += '\nCurrent objectives: ' + goals;
+    if (preferences && isGuided) p += '\nCommunication style: ' + preferences;
+    if (highScrutiny) p += '\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.';
   }
 
   if (orgDocs && orgDocs.length > 0) {
