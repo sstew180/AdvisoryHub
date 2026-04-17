@@ -11,6 +11,18 @@ import ArchivePage from './pages/ArchivePage';
 
 const API = import.meta.env.VITE_API_URL;
 
+const FUTURE_MODULES = [
+  { name: 'Asset Management', icon: '🏗️' },
+  { name: 'Contract Management', icon: '📋' },
+  { name: 'Cyber Security', icon: '🔒' },
+  { name: 'Insurance', icon: '🛡️' },
+  { name: 'Council and Policymaking', icon: '🏛️' },
+  { name: 'Environmental', icon: '🌿' },
+  { name: 'Safety', icon: '⚠️' },
+  { name: 'Communications', icon: '📣' },
+  { name: 'Financial Management', icon: '💰' },
+];
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +55,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load modules when session is available
   useEffect(() => {
     if (!session) return;
     setModulesLoading(true);
@@ -53,10 +64,8 @@ export default function App() {
         const mods = Array.isArray(data) ? data : [];
         setModules(mods);
         if (mods.length === 1) {
-          // Only one module -- auto-select it
           selectModule(mods[0], session.user.id);
         } else if (mods.length > 1) {
-          // Multiple modules -- check last active
           supabase.from('profiles')
             .select('last_active_module')
             .eq('id', session.user.id)
@@ -66,7 +75,6 @@ export default function App() {
                 const last = mods.find(m => m.id === profile.last_active_module);
                 if (last) { selectModule(last, session.user.id); return; }
               }
-              // No last active -- show selector (activeModule stays null)
             });
         }
         setModulesLoading(false);
@@ -76,7 +84,6 @@ export default function App() {
 
   const selectModule = (mod, userId) => {
     setActiveModule(mod);
-    // Save last active
     fetch(`${API}/api/modules/last-active`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -95,11 +102,12 @@ export default function App() {
     </div>
   );
 
-  // Module selector -- shown when user has multiple modules and none is active yet
+  // Module selector
   if (modules.length > 1 && !activeModule) return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: 'var(--surface)' }}>
-      <div style={{ maxWidth: 480, width: '100%', padding: '0 24px' }}>
+    <div style={{ width: '100vw', height: '100vh', overflowY: 'auto',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      background: 'var(--surface)', padding: '48px 24px' }}>
+      <div style={{ maxWidth: 560, width: '100%' }}>
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
             AdvisoryHub
@@ -108,16 +116,24 @@ export default function App() {
             Select a domain to get started
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+        {/* Licensed modules */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
           {modules.map(mod => (
             <button key={mod.id} onClick={() => selectModule(mod)}
-              style={{ padding: '20px 24px', background: 'var(--bg)', border: '1px solid var(--border)',
+              style={{ padding: '18px 24px', background: 'var(--bg)', border: '1px solid var(--border)',
                 borderRadius: 8, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
                 boxShadow: 'var(--shadow)' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                {mod.name}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,145,164,0.12)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  {mod.name}
+                </div>
+                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                  background: 'rgba(0,145,164,0.08)', color: 'var(--accent)', fontWeight: 500 }}>
+                  Active
+                </span>
               </div>
               {mod.description && (
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -127,7 +143,28 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div style={{ marginTop: 24, textAlign: 'center' }}>
+
+        {/* Coming soon modules */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+            letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 12 }}>
+            Coming soon
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {FUTURE_MODULES.map(mod => (
+              <div key={mod.name}
+                style={{ padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)',
+                  borderRadius: 8, opacity: 0.45, cursor: 'default',
+                  display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>{mod.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+                  lineHeight: 1.3 }}>{mod.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
           <button onClick={() => supabase.auth.signOut()}
             style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
               cursor: 'pointer' }}>
@@ -138,7 +175,7 @@ export default function App() {
     </div>
   );
 
-  // No modules licensed -- show a plain error state
+  // No modules licensed
   if (modules.length === 0) return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
       justifyContent: 'center', background: 'var(--surface)' }}>
