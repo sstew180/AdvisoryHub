@@ -209,6 +209,61 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   );
 }
 
+// Mic button component using Web Speech API
+function MicButton({ onTranscript, disabled }) {
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const supported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  const toggle = () => {
+    if (!supported) return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = 'en-AU';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      onTranscript(transcript);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  if (!supported) return null;
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={disabled}
+      title={listening ? 'Stop recording' : 'Speak your prompt'}
+      style={{
+        background: 'none', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+        padding: '2px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: listening ? '#e53e3e' : 'var(--text-muted)',
+        transition: 'color 0.15s',
+        opacity: disabled ? 0.4 : 1,
+        animation: listening ? 'micPulse 1s ease-in-out infinite' : 'none',
+      }}
+    >
+      <svg width='16' height='16' viewBox='0 0 16 16' fill='currentColor'>
+        <rect x='5' y='1' width='6' height='9' rx='3' />
+        <path d='M2.5 7.5A5.5 5.5 0 0 0 8 13a5.5 5.5 0 0 0 5.5-5.5' stroke='currentColor' strokeWidth='1.5' fill='none' strokeLinecap='round'/>
+        <line x1='8' y1='13' x2='8' y2='15' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round'/>
+        <line x1='5.5' y1='15' x2='10.5' y2='15' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round'/>
+      </svg>
+    </button>
+  );
+}
+
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, activeModule, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -289,6 +344,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const removeAttachment = () => setAttachedFile(null);
+
+  // Append transcript to existing input (don't overwrite)
+  const handleTranscript = (transcript) => {
+    setInput(prev => prev ? prev + ' ' + transcript : transcript);
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  };
 
   const handleArchiveSession = async () => {
     setSessionMenuOpen(false);
@@ -468,6 +529,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes micPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
       `}</style>
 
       <div className='topbar'>
@@ -655,6 +717,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                     <input ref={fileInputRef} type='file' style={{ display: 'none' }}
                       accept='.pdf,.docx,.txt,.md' onChange={handleFileChange} />
                   </label>
+                  <MicButton onTranscript={handleTranscript} disabled={streaming} />
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
                   </span>
