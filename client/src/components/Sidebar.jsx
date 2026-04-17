@@ -41,7 +41,13 @@ function groupSessions(sessions) {
   return order.map(g => ({ label: g, sessions: groups[g] }));
 }
 
-export default function Sidebar({ view, setView, session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, isOpen, onClose }) {
+export default function Sidebar({
+  view, setView, session,
+  activeSessionId, setActiveSessionId,
+  activeProject, setActiveProject,
+  activeModule, modules, onSwitchModule,
+  isOpen, onClose,
+}) {
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
   const [projectFilter, setProjectFilter] = useState('all');
@@ -63,7 +69,6 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
       .eq('user_id', session.user.id)
       .order('name')
       .then(({ data }) => { if (data) setProjects(data); });
-    // Load first name for greeting
     supabase.from('profiles')
       .select('first_name')
       .eq('id', session.user.id)
@@ -152,6 +157,7 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
   });
 
   const groups = groupSessions(filteredSessions);
+  const showSwitchModule = modules && modules.length > 1;
 
   return (
     <>
@@ -166,6 +172,13 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
               </div>
             )}
           </div>
+          {activeModule && (
+            <div style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--accent)',
+              background: 'rgba(0,145,164,0.08)', padding: '2px 8px', borderRadius: 10,
+              fontWeight: 500, flexShrink: 0 }}>
+              {activeModule.name}
+            </div>
+          )}
         </div>
         <nav className='sidebar-nav'>
           {NAV.map(item => (
@@ -257,7 +270,14 @@ export default function Sidebar({ view, setView, session, activeSessionId, setAc
             </div>
           )}
         </div>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {showSwitchModule && (
+            <button className='btn btn-secondary' style={{ width: '100%', fontSize: 12 }}
+              onClick={() => { onSwitchModule && onSwitchModule(); onClose && onClose(); }}>
+              ⇄ Switch domain
+            </button>
+          )}
           <button className='btn btn-secondary' style={{ width: '100%', fontSize: 12 }}
             onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
