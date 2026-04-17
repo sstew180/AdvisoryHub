@@ -356,18 +356,20 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
-    setInput(prev => {
-      const next = prev ? prev + ' ' + transcript : transcript;
-      inputRef.current = next;
-      // Also update DOM directly so send button and textarea are in sync immediately
-      if (textareaRef.current) {
-        textareaRef.current.value = next;
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
-      }
-      return next;
-    });
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    const el = textareaRef.current;
+    const prev = el?.value || input;
+    const next = prev ? prev + ' ' + transcript : transcript;
+    inputRef.current = next;
+    setInput(next);
+    if (el) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      if (nativeSetter) nativeSetter.call(el, next);
+      else el.value = next;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+      setTimeout(() => el.focus(), 50);
+    }
   };
 
   const handleArchiveSession = async () => {
