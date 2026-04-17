@@ -289,7 +289,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
-  const latestInput = useRef(input); latestInput.current = input; // always current on render
+
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -356,20 +356,17 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
-    // Set React state -- this is what send() will read via the render sync
-    setInput(prev => {
-      const next = prev ? prev + ' ' + transcript : transcript;
-      return next;
-    });
-    // Resize textarea
     const el = textareaRef.current;
+    const prev = input;
+    const next = prev ? prev + ' ' + transcript : transcript;
+    setInput(next);
     if (el) {
-      setTimeout(() => {
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-        el.focus();
-      }, 50);
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+      el.focus();
     }
+    // Call send directly with the transcript text -- bypasses stale closure
+    send(next);
   };
 
   const handleArchiveSession = async () => {
@@ -428,8 +425,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setDownloading(false);
   };
 
-  const send = async () => {
-    const text = latestInput.current.trim();
+  const send = async (overrideText) => {
+    const text = (overrideText || input).trim();
     if (!text || streaming) return;
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
