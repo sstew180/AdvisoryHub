@@ -290,8 +290,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const inputRef = useRef(''); // mirrors input state for use in async send
-  // Keep inputRef in sync with input state on every render -- input state is authoritative
-  if (input !== undefined) inputRef.current = input;
+  // inputRef is set by onChange and handleTranscript -- do not overwrite on render
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -358,18 +357,21 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
+    // Set React state -- this is what send() will read via the render sync
+    setInput(prev => {
+      const next = prev ? prev + ' ' + transcript : transcript;
+      inputRef.current = next;
+      return next;
+    });
+    // Resize textarea
     const el = textareaRef.current;
-    const prev = el?.value || '';
-    const next = prev ? prev + ' ' + transcript : transcript;
-    // Write directly to DOM -- send() reads from here
     if (el) {
-      el.value = next;
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-      setTimeout(() => el.focus(), 50);
+      setTimeout(() => {
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+        el.focus();
+      }, 50);
     }
-    setInput(next);
-    inputRef.current = next;
   };
 
   const handleArchiveSession = async () => {
@@ -429,12 +431,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    // Read from textarea DOM directly -- source of truth regardless of React state
-    const text = (textareaRef.current?.value || '').trim();
+    // inputRef.current is set synchronously by both typing onChange and handleTranscript
+    // It is always ahead of or equal to React input state
+    const text = (inputRef.current || input).trim();
     if (!text || streaming) return;
-    setInput('');
     inputRef.current = '';
-    if (textareaRef.current) { textareaRef.current.value = ''; textareaRef.current.style.height = 'auto'; }
+    setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
