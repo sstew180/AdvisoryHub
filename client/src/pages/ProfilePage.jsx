@@ -33,6 +33,7 @@ export default function ProfilePage({ session, onMenuOpen }) {
             <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
           </svg>
         </button>
+        <button className='mobile-back' onClick={() => setView('chat')}>‹ Chat</button>
         <div className='page-title' style={{ margin: 0 }}>Profile</div>
       </div>
       <div className='page-content'>

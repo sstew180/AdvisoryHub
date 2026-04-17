@@ -347,6 +347,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
             </svg>
           </button>
+          <button className='mobile-back' onClick={() => setView('chat')}>‹ Chat</button>
           <button className='btn btn-secondary' onClick={() => setEditing(null)}>&larr; Back</button>
           <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
         </div>
@@ -436,6 +437,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
             </svg>
           </button>
+          <button className='mobile-back' onClick={() => setView('chat')}>‹ Chat</button>
           <div className='page-title' style={{ margin: 0 }}>Projects</div>
         </div>
         <button className='btn btn-primary' onClick={() => setEditing({ ...blank })}>New Project</button>
