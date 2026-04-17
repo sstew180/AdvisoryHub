@@ -12,15 +12,15 @@ import ArchivePage from './pages/ArchivePage';
 const API = import.meta.env.VITE_API_URL;
 
 const FUTURE_MODULES = [
-  { name: 'Asset Management', icon: '🏗️' },
-  { name: 'Contract Management', icon: '📋' },
-  { name: 'Cyber Security', icon: '🔒' },
-  { name: 'Insurance', icon: '🛡️' },
-  { name: 'Council and Policymaking', icon: '🏛️' },
-  { name: 'Environmental', icon: '🌿' },
-  { name: 'Safety', icon: '⚠️' },
-  { name: 'Communications', icon: '📣' },
-  { name: 'Financial Management', icon: '💰' },
+  { name: 'Asset Management' },
+  { name: 'Contract Management' },
+  { name: 'Cyber Security' },
+  { name: 'Insurance' },
+  { name: 'Council and Policymaking' },
+  { name: 'Environmental' },
+  { name: 'Safety' },
+  { name: 'Communications' },
+  { name: 'Financial Management' },
 ];
 
 export default function App() {
@@ -107,7 +107,7 @@ export default function App() {
     <div style={{ width: '100vw', height: '100vh', overflowY: 'auto',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       background: 'var(--surface)', padding: '48px 24px' }}>
-      <div style={{ maxWidth: 560, width: '100%' }}>
+      <div style={{ maxWidth: 600, width: '100%' }}>
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
             AdvisoryHub
@@ -117,57 +117,49 @@ export default function App() {
           </div>
         </div>
 
-        {/* Licensed modules */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          {/* Licensed modules -- full colour, clickable */}
           {modules.map(mod => (
             <button key={mod.id} onClick={() => selectModule(mod)}
-              style={{ padding: '18px 24px', background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: 8, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                boxShadow: 'var(--shadow)' }}
+              style={{ padding: '18px 16px', background: 'var(--bg)',
+                border: '1px solid var(--border)', borderRadius: 8,
+                cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                boxShadow: 'var(--shadow)', minHeight: 80,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,145,164,0.12)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                  {mod.name}
-                </div>
-                <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10,
-                  background: 'rgba(0,145,164,0.08)', color: 'var(--accent)', fontWeight: 500 }}>
-                  Active
-                </span>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                lineHeight: 1.3, marginBottom: mod.description ? 4 : 0 }}>
+                {mod.name}
               </div>
               {mod.description && (
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  {mod.description}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                  {mod.description.length > 60 ? mod.description.slice(0, 60) + '…' : mod.description}
                 </div>
               )}
             </button>
           ))}
-        </div>
 
-        {/* Coming soon modules */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-            letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 12 }}>
-            Coming soon
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            {FUTURE_MODULES.map(mod => (
-              <div key={mod.name}
-                style={{ padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)',
-                  borderRadius: 8, opacity: 0.45, cursor: 'default',
-                  display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, flexShrink: 0 }}>{mod.icon}</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
-                  lineHeight: 1.3 }}>{mod.name}</span>
+          {/* Future modules -- same size, greyed out, not clickable */}
+          {FUTURE_MODULES.map(mod => (
+            <div key={mod.name}
+              style={{ padding: '18px 16px', background: 'var(--bg)',
+                border: '1px solid var(--border)', borderRadius: 8,
+                cursor: 'default', minHeight: 80,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                opacity: 0.35 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                lineHeight: 1.3 }}>
+                {mod.name}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ marginTop: 24, textAlign: 'center' }}>
           <button onClick={() => supabase.auth.signOut()}
-            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
-              cursor: 'pointer' }}>
+            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none',
+              border: 'none', cursor: 'pointer' }}>
             Sign out
           </button>
         </div>
