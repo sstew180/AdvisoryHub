@@ -354,11 +354,17 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   const removeAttachment = () => setAttachedFile(null);
 
-  // Append transcript to existing input (don't overwrite)
+  // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
     setInput(prev => {
       const next = prev ? prev + ' ' + transcript : transcript;
       inputRef.current = next;
+      // Also update DOM directly so send button and textarea are in sync immediately
+      if (textareaRef.current) {
+        textareaRef.current.value = next;
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+      }
       return next;
     });
     setTimeout(() => textareaRef.current?.focus(), 50);
@@ -421,11 +427,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    const text = (inputRef.current || input).trim();
+    // Read from DOM directly to avoid stale closure issues after voice input
+    const text = (textareaRef.current?.value || inputRef.current || input).trim();
     if (!text || streaming) return;
     setInput('');
     inputRef.current = '';
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (textareaRef.current) { textareaRef.current.value = ''; textareaRef.current.style.height = 'auto'; }
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
@@ -747,7 +754,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                       {downloading ? '...' : '↓ Doc'}
                     </button>
                   )}
-                  <button className='send-btn' onClick={send} disabled={streaming || !(inputRef.current || input).trim()}>
+                  <button className='send-btn' onClick={send} disabled={streaming || !(textareaRef.current?.value || inputRef.current || input).trim()}>
                     {streaming ? '...' : 'Send'}
                   </button>
                 </div>
