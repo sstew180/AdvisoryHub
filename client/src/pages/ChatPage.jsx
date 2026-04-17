@@ -141,11 +141,13 @@ function StatusCallout({ steps, visible }) {
   );
 }
 
-function EmptyState({ activeProject, onPromptClick, userId }) {
+function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   const [prompts, setPrompts] = useState(null);
   const [loading, setLoading] = useState(true);
   const fallback = activeProject ? FALLBACK_PROJECT_PROMPTS : FALLBACK_GENERAL_PROMPTS;
-  const subtitle = activeProject ? 'Active project: ' + activeProject.name : 'Risk, Audit and Insurance';
+  const subtitle = activeProject
+    ? 'Active project: ' + activeProject.name
+    : activeModule ? activeModule.name : 'Risk, Audit and Insurance';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,7 +209,7 @@ function EmptyState({ activeProject, onPromptClick, userId }) {
   );
 }
 
-export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, onMenuOpen }) {
+export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, activeModule, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -260,7 +262,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const ensureSession = async () => {
     if (activeSessionId) return activeSessionId;
     const { data } = await supabase.from('sessions').insert({
-      user_id: session.user.id, project_id: activeProject?.id || null, title: null
+      user_id: session.user.id,
+      project_id: activeProject?.id || null,
+      module_id: activeModule?.id || null,
+      title: null,
     }).select().single();
     setActiveSessionId(data.id);
     return data.id;
@@ -372,6 +377,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         fd.append('userId', session.user.id);
         fd.append('sessionId', sessionId);
         fd.append('projectId', activeProject?.id || '');
+        fd.append('moduleId', activeModule?.id || '');
         fd.append('messages', JSON.stringify(msgPayload));
         fd.append('mode', mode);
         fd.append('ruleOverrides', JSON.stringify({}));
@@ -383,11 +389,15 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: session.user.id, sessionId,
+            userId: session.user.id,
+            sessionId,
             projectId: activeProject?.id || null,
+            moduleId: activeModule?.id || null,
             messages: msgPayload,
-            mode, ruleOverrides: {}, formatControls: formatForThisSend,
-          })
+            mode,
+            ruleOverrides: {},
+            formatControls: formatForThisSend,
+          }),
         });
       }
 
@@ -472,7 +482,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
-        {activeProject && <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>}
+        {activeModule && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
+          </div>
+        )}
+        {activeProject && (
+          <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
+        )}
         {autoCaptured && (
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
             background: 'rgba(0,145,164,0.08)', border: '1px solid var(--accent)',
@@ -521,7 +538,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           </div>
         )}
         {messages.length === 0 && !streaming && !sessionArchived && (
-          <EmptyState activeProject={activeProject} onPromptClick={handlePromptClick} userId={session.user.id} />
+          <EmptyState
+            activeProject={activeProject}
+            activeModule={activeModule}
+            onPromptClick={handlePromptClick}
+            userId={session.user.id}
+          />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
