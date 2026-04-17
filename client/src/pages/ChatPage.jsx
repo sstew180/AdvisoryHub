@@ -754,7 +754,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                       {downloading ? '...' : '↓ Doc'}
                     </button>
                   )}
-                  <button className='send-btn' onClick={send} disabled={streaming || !(textareaRef.current?.value || inputRef.current || input).trim()}>
+                  <button className='send-btn' onClick={send} disabled={streaming}>
                     {streaming ? '...' : 'Send'}
                   </button>
                 </div>
