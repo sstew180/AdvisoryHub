@@ -358,12 +358,18 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
-    setInput(prev => {
-      const next = prev ? prev + ' ' + transcript : transcript;
-      inputRef.current = next;
-      return next;
-    });
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    const el = textareaRef.current;
+    const prev = el?.value || '';
+    const next = prev ? prev + ' ' + transcript : transcript;
+    // Write directly to DOM -- send() reads from here
+    if (el) {
+      el.value = next;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+      setTimeout(() => el.focus(), 50);
+    }
+    setInput(next);
+    inputRef.current = next;
   };
 
   const handleArchiveSession = async () => {
@@ -423,11 +429,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    const text = inputRef.current.trim();
+    // Read from textarea DOM directly -- source of truth regardless of React state
+    const text = (textareaRef.current?.value || '').trim();
     if (!text || streaming) return;
     setInput('');
     inputRef.current = '';
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (textareaRef.current) { textareaRef.current.value = ''; textareaRef.current.style.height = 'auto'; }
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
     await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
