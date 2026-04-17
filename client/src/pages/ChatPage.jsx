@@ -290,6 +290,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const inputRef = useRef(''); // mirrors input state for use in async send
+  // Keep inputRef in sync with input state on every render -- input state is authoritative
+  if (input !== undefined) inputRef.current = input;
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -356,20 +358,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
-    const el = textareaRef.current;
-    const prev = el?.value || input;
-    const next = prev ? prev + ' ' + transcript : transcript;
-    inputRef.current = next;
-    setInput(next);
-    if (el) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-      if (nativeSetter) nativeSetter.call(el, next);
-      else el.value = next;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-      setTimeout(() => el.focus(), 50);
-    }
+    setInput(prev => {
+      const next = prev ? prev + ' ' + transcript : transcript;
+      inputRef.current = next;
+      return next;
+    });
+    setTimeout(() => textareaRef.current?.focus(), 50);
   };
 
   const handleArchiveSession = async () => {
@@ -429,11 +423,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    // inputRef.current is always up to date -- avoids stale closure from React state
     const text = inputRef.current.trim();
     if (!text || streaming) return;
-    inputRef.current = '';
     setInput('');
+    inputRef.current = '';
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
     const userMsg = { role: 'user', content: attachedFile ? `[Attached: ${attachedFile.name}] ${text}` : text };
