@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
-export default function ProfilePage({ session, onMenuOpen }) {
+export default function ProfilePage({ session, onMenuOpen, setView }) {
   const [profile, setProfile] = useState({
     role: '', service_area: '', goals: '', organisation: 'City of Gold Coast',
     preferences: '', high_scrutiny: false

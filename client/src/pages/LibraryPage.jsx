@@ -5,7 +5,7 @@ import axios from 'axios';
 const API = import.meta.env.VITE_API_URL;
 const CATS = ['All', 'Framework', 'Legislation', 'Best Practice', 'Consulting', 'Contract', 'Skills', 'Templates', 'Organisation', 'Communication'];
 
-export default function LibraryPage({ session, onMenuOpen }) {
+export default function LibraryPage({ session, onMenuOpen, setView }) {
   const [docs, setDocs] = useState([]);
   const [projects, setProjects] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -155,7 +155,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
   const projectNameMap = {};
   projects.forEach(p => { projectNameMap[p.id] = p.name; });
 
-  // Expandable project checkbox list -- collapsed sub-projects by default
   const ProjectCheckboxList = ({ selectedIds, onToggle }) => {
     const [expandedParents, setExpandedParents] = useState({});
     const toggleParent = (id) => setExpandedParents(e => ({ ...e, [id]: !e[id] }));
@@ -168,7 +167,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
           const subSelectedCount = subs.filter(sp => selectedIds.includes(sp.id)).length;
           return (
             <div key={p.id}>
-              {/* Top-level project row */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px',
                 borderBottom: isExpanded && subs.length > 0 ? '1px solid var(--border)' : 'none' }}>
                 {subs.length > 0 && (
@@ -192,7 +190,6 @@ export default function LibraryPage({ session, onMenuOpen }) {
                   )}
                 </label>
               </div>
-              {/* Sub-projects -- shown when expanded */}
               {isExpanded && subs.map((sp, i) => (
                 <div key={sp.id} style={{ display: 'flex', alignItems: 'center', padding: '5px 12px 5px 28px',
                   background: 'var(--surface)',
@@ -236,6 +233,7 @@ export default function LibraryPage({ session, onMenuOpen }) {
               <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
             </svg>
           </button>
+          <button className='mobile-back' onClick={() => setView('chat')}>‹ Chat</button>
           <div className='page-title' style={{ margin: 0 }}>Library</div>
         </div>
         {uploadSuccess && <span style={{ fontSize: 12, color: '#2e7d32', fontWeight: 500 }}>Document uploaded</span>}
