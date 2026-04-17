@@ -289,8 +289,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
-  const inputRef = useRef(''); // mirrors input state for use in async send
-  // inputRef is set by onChange and handleTranscript -- do not overwrite on render
+  const latestInput = useRef(input); latestInput.current = input; // always current on render
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -360,7 +359,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     // Set React state -- this is what send() will read via the render sync
     setInput(prev => {
       const next = prev ? prev + ' ' + transcript : transcript;
-      inputRef.current = next;
       return next;
     });
     // Resize textarea
@@ -431,11 +429,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   };
 
   const send = async () => {
-    // inputRef.current is set synchronously by both typing onChange and handleTranscript
-    // It is always ahead of or equal to React input state
-    const text = (inputRef.current || input).trim();
+    const text = latestInput.current.trim();
     if (!text || streaming) return;
-    inputRef.current = '';
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     const sessionId = await ensureSession();
@@ -729,7 +724,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 ref={textareaRef}
                 className='input-textarea'
                 value={input}
-                onChange={e => { setInput(e.target.value); inputRef.current = e.target.value; }}
+                onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
                 rows={1}
