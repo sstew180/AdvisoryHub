@@ -574,9 +574,9 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
           </div>
         )}
-        {activeProject && (
-          <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
-        )}
+      {activeProject && (
+  <div className='project-indicator' onClick={() => setView && setView('projects')} style={{ cursor: 'pointer' }} title='Back to project'>Project: <span>{activeProject.name}</span></div>
+)}
         {setView && (
           <button
             onClick={() => setView('projects')}
