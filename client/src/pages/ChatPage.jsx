@@ -69,24 +69,15 @@ async function generatePersonalisedPrompts(profile, activeProject) {
   const systemPrompt = 'You are AdvisoryHub, an AI advisory assistant for local government officers specialising in Risk, Audit, and Insurance in Queensland, Australia.';
   const userPrompt = `Based on this user context, generate exactly 6 short, specific, actionable prompt suggestions the user might want to ask right now. Each suggestion should be a complete question or request, directly relevant to their role, objectives, or active project. Make them concrete and practical -- not generic.\n\n${contextBlock}\n\nReturn a JSON array of exactly 6 strings. No other text, no markdown, no explanation. Example format:\n["Prompt one", "Prompt two", "Prompt three", "Prompt four", "Prompt five", "Prompt six"]`;
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(API + '/api/suggest-prompts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
+    body: JSON.stringify({ systemPrompt, userPrompt }),
   });
 
   if (!response.ok) return null;
   const data = await response.json();
-  const text = data.content?.[0]?.text?.trim();
-  if (!text) return null;
-  const clean = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-  const parsed = JSON.parse(clean);
-  if (Array.isArray(parsed) && parsed.length === 6) return parsed;
+  if (Array.isArray(data) && data.length === 6) return data;
   return null;
 }
 
