@@ -81,6 +81,23 @@ async function generatePersonalisedPrompts(profile, activeProject) {
   return null;
 }
 
+// Speak text using Web Speech API SpeechSynthesis
+function speakText(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-AU';
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  // Prefer an Australian or English voice if available
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.lang === 'en-AU') ||
+    voices.find(v => v.lang.startsWith('en-')) ||
+    voices[0];
+  if (preferred) utterance.voice = preferred;
+  window.speechSynthesis.speak(utterance);
+}
+
 function StatusCallout({ steps, visible }) {
   const [opacity, setOpacity] = useState(0);
 
@@ -290,6 +307,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [mode, setMode] = useState('guided');
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [formatControls, setFormatControls] = useState({ length: null, format: null, depth: null });
   const [formatOpen, setFormatOpen] = useState(!isMobile());
   const [autoCaptured, setAutoCaptured] = useState(null);
@@ -302,6 +320,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Stop speaking when mode changes away from inquisitive
+  useEffect(() => {
+    if (mode !== 'inquisitive' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -511,6 +536,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           } catch {}
         }
       }
+
+      // Speak the response if voice is enabled and in inquisitive mode
+      if (voiceEnabled && mode === 'inquisitive' && assistantText) {
+        speakText(assistantText);
+      }
+
       await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
       const { data: allMsgs } = await supabase.from('messages')
         .select('*').eq('session_id', sessionId).order('created_at');
@@ -569,6 +600,23 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             title='Inquisitive mode -- AI asks one question at a time before producing any output'
           >Inquisitive</button>
         </div>
+        {mode === 'inquisitive' && (
+          <button
+            onClick={() => {
+              if (window.speechSynthesis) window.speechSynthesis.cancel();
+              setVoiceEnabled(v => !v);
+            }}
+            title={voiceEnabled ? 'Voice on -- click to turn off' : 'Voice off -- click to turn on'}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, padding: '2px 4px',
+              color: voiceEnabled ? 'var(--accent)' : 'var(--text-muted)',
+              transition: 'color 0.15s',
+            }}
+          >
+            {voiceEnabled ? '🔊' : '🔇'}
+          </button>
+        )}
         {activeModule && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
