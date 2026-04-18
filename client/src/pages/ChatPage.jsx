@@ -288,7 +288,7 @@ function MicButton({ onTranscript, disabled }) {
   );
 }
 
-export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, setView, activeModule, onMenuOpen }) {
+export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setView, activeModule, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -565,15 +565,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
           </svg>
         </button>
-        {setView && (
-          <button onClick={() => setView('projects')}
-            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
-              cursor: 'pointer', padding: '4px 8px', borderRadius: 'var(--radius)',
-              transition: 'color 0.15s' }}
-            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-          >‹ Projects</button>
-        )}
+        {setView && <button onClick={() => setView('projects')} style={{fontSize:12,color:'var(--text-muted)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px'}}>‹ Projects</button>}
         <div className='mode-toggle'>
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
@@ -583,7 +575,116 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
           </div>
         )}
-        
+        {activeProject && (
+          <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
+        )}
+        {activeProject && activeSessionId && messages.length > 0 && (
+          <button
+            onClick={() => { setActiveSessionId(null); setView('projects'); }}
+            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
+              cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
+            title='Back to project history'
+          >
+            ‹ {activeProject.name}
+          </button>
+        )}
+        {autoCaptured && (
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
+            background: 'rgba(0,145,164,0.08)', border: '1px solid var(--accent)',
+            borderRadius: 'var(--radius)', padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+            Note captured
+          </div>
+        )}
+        {activeSessionId && messages.length > 0 && (
+          <div style={{ marginLeft: autoCaptured ? 8 : 'auto', position: 'relative' }}>
+            <button
+              className='action-btn'
+              style={{ fontSize: 18, padding: '2px 8px', letterSpacing: 2 }}
+              onClick={() => setSessionMenuOpen(prev => !prev)}
+              title='Session options'
+            >
+              ···
+            </button>
+            {sessionMenuOpen && (
+              <div
+                className='session-menu-dropdown'
+                style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4 }}
+                onMouseLeave={() => setSessionMenuOpen(false)}
+              >
+                {sessionArchived ? (
+                  <button onClick={handleRestoreSession}>Restore session</button>
+                ) : (
+                  <button onClick={handleArchiveSession}>Archive session</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className='chat-area'>
+        {sessionArchived && (
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)', padding: '8px 14px', marginBottom: 16,
+            fontSize: 13, color: 'var(--text-secondary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span>This session is archived and read-only.</span>
+            <button className='action-btn' onClick={handleRestoreSession}>Restore</button>
+          </div>
+        )}
+        {messages.length === 0 && !streaming && !sessionArchived && (
+          <EmptyState
+            activeProject={activeProject}
+            activeModule={activeModule}
+            onPromptClick={handlePromptClick}
+            userId={session.user.id}
+          />
+        )}
+        {messages.map((msg, i) => (
+          <Message key={i} message={msg} session={session}
+            sessionId={activeSessionId} onPin={() => console.log('Pinned')} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      <StatusCallout steps={statusSteps} visible={statusVisible} />
+
+      {!sessionArchived && (
+        <div className='input-area'>
+          <div className='input-area-inner'>
+            <div className='input-box'>
+              <div style={{ borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 4px',
+                  gap: 8, borderBottom: formatOpen ? '1px solid var(--border)' : 'none' }}>
+                  <button onClick={() => setFormatOpen(o => !o)}
+                    style={{ fontSize: 11, color: formatActiveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                      display: 'flex', alignItems: 'center', gap: 5, fontWeight: 500 }}>
+                    Format
+                    {formatActiveCount > 0 && (
+                      <span style={{ width: 6, height: 6, borderRadius: '50%',
+                        background: 'var(--accent)', display: 'inline-block', flexShrink: 0 }} />
+                    )}
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)',
+                      transform: formatOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      display: 'inline-block', transition: 'transform 0.2s' }}>▼</span>
+                  </button>
+                  {formatActiveCount > 0 && !formatOpen && (
+                    <span style={{ fontSize: 10, color: 'var(--accent)' }}>
+                      {[formatControls.length, formatControls.format, formatControls.depth]
+                        .filter(Boolean).join(', ')}
+                    </span>
+                  )}
+                  {formatActiveCount > 0 && (
+                    <button onClick={() => setFormatControls({ length: null, format: null, depth: null })}
+                      style={{ fontSize: 10, color: 'var(--text-muted)', background: 'none',
+                        border: 'none', cursor: 'pointer', padding: 0, marginLeft: 'auto' }}>
+                      Clear
+                    </button>
+                  )}
                 </div>
                 {formatOpen && (
                   <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px',
