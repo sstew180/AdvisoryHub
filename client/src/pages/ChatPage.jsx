@@ -577,14 +577,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         {activeProject && (
           <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
         )}
-        {activeProject && (
+        {setView && (
           <button
-            onClick={() => { setActiveSessionId(null); setView('projects'); }}
+            onClick={() => setView('projects')}
             style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
               cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
-            title='Back to project history'
+            title='Back to projects'
           >
-            ‹ {activeProject.name}
+            ‹ Projects
           </button>
         )}
         {autoCaptured && (
