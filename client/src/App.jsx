@@ -103,7 +103,6 @@ export default function App() {
     </div>
   );
 
-  // Module selector
   if (modules.length > 1 && !activeModule) return (
     <div style={{ width: '100vw', height: '100vh', overflowY: 'auto',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
@@ -119,7 +118,6 @@ export default function App() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          {/* Licensed modules -- full colour, clickable */}
           {modules.map(mod => (
             <button key={mod.id} onClick={() => selectModule(mod)}
               style={{ padding: '18px 16px', background: 'var(--bg)',
@@ -135,13 +133,12 @@ export default function App() {
               </div>
               {mod.description && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                  {mod.description.length > 60 ? mod.description.slice(0, 60) + '…' : mod.description}
+                  {mod.description.length > 60 ? mod.description.slice(0, 60) + '...' : mod.description}
                 </div>
               )}
             </button>
           ))}
 
-          {/* Future modules -- same size, greyed out, not clickable */}
           {FUTURE_MODULES.map(mod => (
             <div key={mod.name}
               style={{ padding: '18px 16px', background: 'var(--bg)',
@@ -168,7 +165,6 @@ export default function App() {
     </div>
   );
 
-  // No modules licensed
   if (modules.length === 0) return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
       justifyContent: 'center', background: 'var(--surface)' }}>
@@ -195,6 +191,7 @@ export default function App() {
           <ChatPage
             session={session} activeSessionId={activeSessionId}
             setActiveSessionId={setActiveSessionId} activeProject={activeProject}
+            setActiveProject={setActiveProject} setView={setView}
             activeModule={activeModule}
             onMenuOpen={() => setSidebarOpen(true)}
           />
