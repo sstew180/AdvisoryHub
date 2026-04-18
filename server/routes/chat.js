@@ -210,7 +210,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     sendStatus(res, 'Reading your profile');
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
-    // Load active module and persona
     let activeModule = null;
     let activePersona = null;
     if (moduleId) {
@@ -344,7 +343,6 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     const isGuided = mode !== 'direct';
 
-    // Rules: persona overrides profile if active, then project rules on top
     const baseRules = activePersona?.prompt_rules || profile?.prompt_rules || [];
     const projectRules = project?.prompt_rules || [];
     const parentRules = parentProject?.prompt_rules || [];
@@ -401,7 +399,6 @@ function buildSystemPrompt(
   userDocs, isGuided, profileRules, projectRules,
   promptOverrides, formatControls
 ) {
-  // Use module identity if available, fall back to hardcoded default
   const identity = activeModule?.system_prompt_identity ||
     'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
@@ -418,10 +415,25 @@ function buildSystemPrompt(
     'skill approach and structure when responding to related requests. Do not quote the skill ' +
     'document verbatim -- use it to shape your response.';
 
+  // Guided mode: question-first behaviour
+  if (isGuided) {
+    p += '\n\nCONVERSATIONAL APPROACH (Guided mode):\n' +
+      'When the user presents an idea, problem, challenge, or request to prepare or present something, ' +
+      'do NOT immediately produce a document, report, or structured output. ' +
+      'Instead, ask 2-3 focused clarifying questions to understand the audience, what success looks like, ' +
+      'what objections or constraints exist, and what context is missing. ' +
+      'Only move to producing output once you have enough specific information to make it grounded and relevant. ' +
+      'Ask your questions as a short conversational paragraph -- not a bulleted list. ' +
+      'If the user has already provided sufficient context, or explicitly asks you to just write something, proceed directly.\n\n' +
+      'Ask first when the user says things like: "help me present this to my boss", "draft a briefing note on X", ' +
+      '"I need to write a report about Y", "how do I approach Z", "I have this idea". ' +
+      'Answer directly when: the user asks a factual question, asks for an explanation, ' +
+      'is following up in an ongoing conversation, or says "just write it" or "go ahead".';
+  }
+
   p += buildRulesBlock(profileRules, projectRules, promptOverrides);
   p += buildFormatBlock(formatControls);
 
-  // User profile block -- persona takes priority over profile for role/area/goals/preferences
   const name = profile?.first_name
     ? profile.first_name + (profile.last_name ? ' ' + profile.last_name : '')
     : null;
