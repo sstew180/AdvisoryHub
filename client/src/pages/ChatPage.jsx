@@ -574,7 +574,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
           </div>
         )}
-        {activeProject && (
+        {setView && (
           <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
         )}
         {setView && (
