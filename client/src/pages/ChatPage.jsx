@@ -25,6 +25,12 @@ const DEPTH_OPTIONS = [
   { id: 'critical', label: 'Critical' },
 ];
 
+const MODE_DESCRIPTIONS = {
+  guided: 'Guided mode draws on your profile, project context, and relevant frameworks to give you well-rounded advice.',
+  direct: 'Direct mode answers immediately with no preamble. Best for quick questions and specific requests.',
+  inquisitive: 'Inquisitive mode asks you one question at a time to help you think through a problem before producing any output.',
+};
+
 const isMobile = () => window.innerWidth < 768;
 
 const FALLBACK_GENERAL_PROMPTS = [
@@ -89,7 +95,6 @@ function speakText(text) {
   utterance.lang = 'en-AU';
   utterance.rate = 1.0;
   utterance.pitch = 1.0;
-  // Prefer an Australian or English voice if available
   const voices = window.speechSynthesis.getVoices();
   const preferred = voices.find(v => v.lang === 'en-AU') ||
     voices.find(v => v.lang.startsWith('en-')) ||
@@ -149,9 +154,12 @@ function StatusCallout({ steps, visible }) {
   );
 }
 
-function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
+function EmptyState({ activeProject, activeModule, onPromptClick, userId, mode }) {
   const [prompts, setPrompts] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [hintDismissed, setHintDismissed] = useState(() => {
+    try { return localStorage.getItem('ah-hint-dismissed') === '1'; } catch { return false; }
+  });
   const fallback = activeProject ? FALLBACK_PROJECT_PROMPTS : FALLBACK_GENERAL_PROMPTS;
   const subtitle = activeProject
     ? 'Active project: ' + activeProject.name
@@ -172,6 +180,11 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const dismissHint = () => {
+    try { localStorage.setItem('ah-hint-dismissed', '1'); } catch {}
+    setHintDismissed(true);
+  };
+
   const displayPrompts = prompts || fallback;
 
   return (
@@ -180,6 +193,32 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
         <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>AdvisoryHub</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
       </div>
+
+      {/* Welcome hint -- only shows until dismissed */}
+      {!hintDismissed && mode !== 'inquisitive' && (
+        <div style={{
+          marginBottom: 20, padding: '12px 16px', borderRadius: 'var(--radius)',
+          background: 'rgba(0,145,164,0.06)', border: '1px solid rgba(0,145,164,0.2)',
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ fontSize: 18, flexShrink: 0 }}>💡</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, marginBottom: 3 }}>
+              Try Inquisitive mode
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Switch to Inquisitive in the topbar and tell AdvisoryHub what you are working on.
+              It will ask you one question at a time to help you think it through before writing anything.
+            </div>
+          </div>
+          <button onClick={dismissHint}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[...Array(6)].map((_, i) => (
@@ -317,11 +356,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [attachedFile, setAttachedFile] = useState(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [sessionArchived, setSessionArchived] = useState(false);
+  const [hoveredMode, setHoveredMode] = useState(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Stop speaking when mode changes away from inquisitive
   useEffect(() => {
     if (mode !== 'inquisitive' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
@@ -537,7 +576,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         }
       }
 
-      // Speak the response if voice is enabled and in inquisitive mode
+      // Speak response if voice enabled and in inquisitive mode
       if (voiceEnabled && mode === 'inquisitive' && assistantText) {
         speakText(assistantText);
       }
@@ -581,6 +620,18 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes micPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .mode-tooltip {
+          position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+          background: var(--text-primary); color: white; font-size: 11px; line-height: 1.4;
+          padding: 6px 10px; border-radius: var(--radius); white-space: normal;
+          width: 200px; text-align: center; pointer-events: none; z-index: 100;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          animation: fadeIn 0.15s ease;
+        }
+        .mode-tooltip::before {
+          content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+          border: 5px solid transparent; border-bottom-color: var(--text-primary);
+        }
       `}</style>
 
       <div className='topbar'>
@@ -591,15 +642,28 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
           </svg>
         </button>
-        <div className='mode-toggle'>
-          <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
-          <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
-          <button
-            className={'mode-btn' + (mode === 'inquisitive' ? ' active' : '')}
-            onClick={() => setMode('inquisitive')}
-            title='Inquisitive mode -- AI asks one question at a time before producing any output'
-          >Inquisitive</button>
+
+        {/* Mode toggle with tooltips */}
+        <div className='mode-toggle' style={{ position: 'relative' }}>
+          {['guided', 'direct', 'inquisitive'].map(m => (
+            <div key={m} style={{ position: 'relative' }}>
+              <button
+                className={'mode-btn' + (mode === m ? ' active' : '')}
+                onClick={() => setMode(m)}
+                onMouseEnter={() => setHoveredMode(m)}
+                onMouseLeave={() => setHoveredMode(null)}
+                title={MODE_DESCRIPTIONS[m]}
+              >
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+              {hoveredMode === m && (
+                <div className='mode-tooltip'>{MODE_DESCRIPTIONS[m]}</div>
+              )}
+            </div>
+          ))}
         </div>
+
+        {/* Voice toggle -- only in inquisitive mode */}
         {mode === 'inquisitive' && (
           <button
             onClick={() => {
@@ -617,6 +681,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             {voiceEnabled ? '🔊' : '🔇'}
           </button>
         )}
+
         {activeModule && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
@@ -667,6 +732,22 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         )}
       </div>
 
+      {/* Mode banner -- shows below topbar when not in guided mode */}
+      {mode !== 'guided' && (
+        <div style={{
+          padding: '6px 20px', fontSize: 11, color: 'var(--text-muted)',
+          background: mode === 'inquisitive' ? 'rgba(0,145,164,0.04)' : 'var(--surface)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: mode === 'inquisitive' ? 'var(--accent)' : 'var(--text-muted)',
+          }} />
+          {MODE_DESCRIPTIONS[mode]}
+        </div>
+      )}
+
       <div className='chat-area'>
         {sessionArchived && (
           <div style={{
@@ -685,6 +766,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             activeModule={activeModule}
             onPromptClick={handlePromptClick}
             userId={session.user.id}
+            mode={mode}
           />
         )}
         {messages.map((msg, i) => (
