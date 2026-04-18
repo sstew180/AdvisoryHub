@@ -173,7 +173,7 @@ function ProjectMemoriesTab({ projectId }) {
   );
 }
 
-function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) {
+function ProjectHistoryTab({ projectId, project, setActiveSessionId, setActiveProject, setView, onClose }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -197,7 +197,7 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
     }
     return order.map(g => ({ label: g, sessions: groups[g] }));
   };
-  const openSession = (sessionId) => { setActiveSessionId(sessionId); setView('chat'); };
+  const openSession = (sessionId) => { setActiveSessionId(sessionId); if (project) setActiveProject(project); setView('chat'); };
   if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading sessions...</p>;
   if (sessions.length === 0) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
   return (
@@ -413,7 +413,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
           {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
-            <ProjectHistoryTab projectId={editing.id} setActiveSessionId={setActiveSessionId} setView={setView} onClose={() => setEditing(null)} />
+            <ProjectHistoryTab projectId={editing.id} project={editing} setActiveSessionId={setActiveSessionId} setActiveProject={setActiveProject} setView={setView} onClose={() => setEditing(null)} />
           )}
           {activeTab !== 'memories' && activeTab !== 'history' && (
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
