@@ -210,13 +210,36 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
 }
 
 // Mic button component using Web Speech API -- continuous mode
+const SILENCE_TIMEOUT_MS = 10000; // stop recording after 10s of silence
+
 function MicButton({ onTranscript, disabled }) {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
+  const silenceTimerRef = useRef(null);
   const supported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  };
+
+  const resetSilenceTimer = () => {
+    clearSilenceTimer();
+    silenceTimerRef.current = setTimeout(() => {
+      // Silence timeout -- stop recording
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+      setListening(false);
+    }, SILENCE_TIMEOUT_MS);
+  };
+
   const stop = () => {
+    clearSilenceTimer();
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     setListening(false);
@@ -232,18 +255,20 @@ function MicButton({ onTranscript, disabled }) {
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      // Accumulate all new results from this event
+      // Reset silence timer on every result
+      resetSilenceTimer();
       let transcript = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) transcript += e.results[i][0].transcript + ' ';
       }
       if (transcript.trim()) onTranscript(transcript.trim());
     };
-    rec.onerror = () => { setListening(false); recognitionRef.current = null; };
-    rec.onend = () => { setListening(false); recognitionRef.current = null; };
+    rec.onerror = () => { clearSilenceTimer(); setListening(false); recognitionRef.current = null; };
+    rec.onend = () => { clearSilenceTimer(); setListening(false); recognitionRef.current = null; };
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
+    resetSilenceTimer(); // start silence timer immediately
   };
 
   if (!supported) return null;
