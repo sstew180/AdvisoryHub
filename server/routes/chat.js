@@ -417,6 +417,15 @@ function buildSystemPrompt(
     'skill approach and structure when responding to related requests. Do not quote the skill ' +
     'document verbatim -- use it to shape your response.';
 
+  // Direct mode: answer immediately, no questions
+  if (!isGuided) {
+    p += '\n\nDIRECT MODE:\n' +
+      'Answer immediately and completely. Do not ask clarifying questions under any circumstances. ' +
+      'Do not ask about the audience, the purpose, the context, or any other details. ' +
+      'If information is missing, make reasonable assumptions and state them briefly, then proceed. ' +
+      'Produce the best possible output right away based on what you have been given.';
+  }
+
   // Inquisitive mode: one question at a time, never produce output until asked
   if (isInquisitive) {
     p += '\n\nINQUISITIVE MODE:\n' +
