@@ -19,6 +19,7 @@ app.use('/api/generate-file', require('./routes/generateFile'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/modules', require('./routes/modules'));
+app.use('/api/suggest-prompts', require('./routes/suggestPrompts'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => console.log(`AdvisoryHub API running on port ${PORT}`));
