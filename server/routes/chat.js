@@ -180,9 +180,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   const moduleId = req.body.moduleId || null;
   const mode = req.body.mode;
   const ruleOverrides = req.body.ruleOverrides ? JSON.parse(typeof req.body.ruleOverrides === 'string' ? req.body.ruleOverrides : JSON.stringify(req.body.ruleOverrides || {})) : {};
-  const formatControls = req.body.formatControls ? JSON.parse(typeof req.body.formatControls === 'string' ? req.body.formatControls : JSON.stringify(req.body.formatControls || {})) : {};
-  let messages = JSON.parse(typeof req.body.messages === 'string' ? req.body.messages : JSON.stringify(req.body.messages || {}));
-
+  const formatControls = typeof req.body.formatControls === 'string' ? JSON.parse(req.body.formatControls) : (req.body.formatControls || {});  let messages = JSON.parse(typeof req.body.messages === 'string' ? req.body.messages : JSON.stringify(req.body.messages || {}));
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
