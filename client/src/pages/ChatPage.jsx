@@ -288,7 +288,7 @@ function MicButton({ onTranscript, disabled }) {
   );
 }
 
-export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, activeModule, onMenuOpen }) {
+export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, setView, activeModule, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
