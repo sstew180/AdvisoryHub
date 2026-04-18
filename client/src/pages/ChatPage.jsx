@@ -577,7 +577,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         {activeProject && (
           <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
         )}
-        {activeProject && activeSessionId && messages.length > 0 && (
+        {activeProject && (
           <button
             onClick={() => { setActiveSessionId(null); setView('projects'); }}
             style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
