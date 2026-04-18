@@ -342,6 +342,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const userDocs = userDocsRaw || [];
 
     const isGuided = mode !== 'direct';
+    const isInquisitive = mode === 'inquisitive';
 
     const baseRules = activePersona?.prompt_rules || profile?.prompt_rules || [];
     const projectRules = project?.prompt_rules || [];
@@ -353,6 +354,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     console.log('Persona:', activePersona ? activePersona.role : 'none');
     console.log('Profile:', profile ? profile.role : 'none');
     console.log('Project:', project ? (parentProject ? parentProject.name + ' > ' + project.name : project.name) : 'none');
+    console.log('Mode:', mode);
     console.log('Memories:', memories ? memories.length : 0);
     console.log('Library docs:', resolvedLibraryDocs.map(d => d.title));
     console.log('Skills:', skillDocs.map(d => d.title));
@@ -365,7 +367,7 @@ router.post('/', upload.single('file'), async (req, res) => {
       profile, activeModule, activePersona,
       project, parentProject, memories, recentSessions,
       resolvedLibraryDocs, skillDocs, templateDocs, orgDocs,
-      userDocs, isGuided, baseRules, mergedProjectRules,
+      userDocs, isGuided, isInquisitive, baseRules, mergedProjectRules,
       ruleOverrides, formatControls
     );
 
@@ -396,7 +398,7 @@ function buildSystemPrompt(
   profile, activeModule, activePersona,
   project, parentProject, memories, recentSessions,
   libraryDocs, skillDocs, templateDocs, orgDocs,
-  userDocs, isGuided, profileRules, projectRules,
+  userDocs, isGuided, isInquisitive, profileRules, projectRules,
   promptOverrides, formatControls
 ) {
   const identity = activeModule?.system_prompt_identity ||
@@ -415,20 +417,18 @@ function buildSystemPrompt(
     'skill approach and structure when responding to related requests. Do not quote the skill ' +
     'document verbatim -- use it to shape your response.';
 
-  // Guided mode: question-first behaviour
-  if (isGuided) {
-    p += '\n\nCONVERSATIONAL APPROACH (Guided mode):\n' +
-      'When the user presents an idea, problem, challenge, or request to prepare or present something, ' +
-      'do NOT immediately produce a document, report, or structured output. ' +
-      'Instead, ask 2-3 focused clarifying questions to understand the audience, what success looks like, ' +
-      'what objections or constraints exist, and what context is missing. ' +
-      'Only move to producing output once you have enough specific information to make it grounded and relevant. ' +
-      'Ask your questions as a short conversational paragraph -- not a bulleted list. ' +
-      'If the user has already provided sufficient context, or explicitly asks you to just write something, proceed directly.\n\n' +
-      'Ask first when the user says things like: "help me present this to my boss", "draft a briefing note on X", ' +
-      '"I need to write a report about Y", "how do I approach Z", "I have this idea". ' +
-      'Answer directly when: the user asks a factual question, asks for an explanation, ' +
-      'is following up in an ongoing conversation, or says "just write it" or "go ahead".';
+  // Inquisitive mode: one question at a time, never produce output until asked
+  if (isInquisitive) {
+    p += '\n\nINQUISITIVE MODE:\n' +
+      'You are a thinking partner, not a document generator. Your job is to ask one question at a time to help the user think through their problem before anything is written.\n\n' +
+      'Rules:\n' +
+      '- Ask exactly ONE question per response. Never ask two questions at once.\n' +
+      '- Wait for the answer before asking the next question.\n' +
+      '- Build each question on what the user just told you.\n' +
+      '- Never produce a document, report, briefing note, or structured output until the user explicitly asks for one with phrases like "write it", "draft it", "go ahead", or "produce the output".\n' +
+      '- Your questions should uncover: the audience, the purpose, the constraints, the objections, the context, and what success looks like.\n' +
+      '- Keep your questions short and conversational -- one sentence.\n' +
+      '- After 4-6 exchanges, if the user has not asked for output, offer to produce something: "I think I have enough to work with -- want me to draft something now?"';
   }
 
   p += buildRulesBlock(profileRules, projectRules, promptOverrides);

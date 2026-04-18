@@ -200,8 +200,7 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   );
 }
 
-// Mic button component using Web Speech API -- continuous mode
-const SILENCE_TIMEOUT_MS = 10000; // stop recording after 10s of silence
+const SILENCE_TIMEOUT_MS = 10000;
 
 function MicButton({ onTranscript, disabled }) {
   const [listening, setListening] = useState(false);
@@ -220,7 +219,6 @@ function MicButton({ onTranscript, disabled }) {
   const resetSilenceTimer = () => {
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
-      // Silence timeout -- stop recording
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
@@ -246,7 +244,6 @@ function MicButton({ onTranscript, disabled }) {
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      // Reset silence timer on every result
       resetSilenceTimer();
       let transcript = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -259,7 +256,7 @@ function MicButton({ onTranscript, disabled }) {
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
-    resetSilenceTimer(); // start silence timer immediately
+    resetSilenceTimer();
   };
 
   if (!supported) return null;
@@ -305,7 +302,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
-
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -370,7 +366,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   const removeAttachment = () => setAttachedFile(null);
 
-  // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
     setInput(prev => prev ? prev + ' ' + transcript : transcript);
     setTimeout(() => textareaRef.current?.focus(), 50);
@@ -568,24 +563,26 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         <div className='mode-toggle'>
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
+          <button
+            className={'mode-btn' + (mode === 'inquisitive' ? ' active' : '')}
+            onClick={() => setMode('inquisitive')}
+            title='Inquisitive mode -- AI asks one question at a time before producing any output'
+          >Inquisitive</button>
         </div>
         {activeModule && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
           </div>
         )}
-      {activeProject && (
-  <div className='project-indicator' onClick={() => setView && setView('projects')} style={{ cursor: 'pointer' }} title='Back to project'>Project: <span>{activeProject.name}</span></div>
-)}
-        {setView && (
-          <button
-            onClick={() => setView('projects')}
-            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
-              cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
-            title='Back to projects'
+        {activeProject && (
+          <div
+            className='project-indicator'
+            onClick={() => setView && setView('projects')}
+            style={{ cursor: 'pointer' }}
+            title='Back to project'
           >
-            ‹ Projects
-          </button>
+            Project: <span>{activeProject.name}</span>
+          </div>
         )}
         {autoCaptured && (
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
@@ -740,7 +737,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
+                placeholder={mode === 'inquisitive' ? 'Tell AdvisoryHub what you are working on...' : 'Ask AdvisoryHub... (Shift+Enter for new line)'}
                 rows={1}
               />
               <div className='input-footer'>
