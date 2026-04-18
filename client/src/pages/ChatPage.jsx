@@ -288,7 +288,7 @@ function MicButton({ onTranscript, disabled }) {
   );
 }
 
-export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setView, activeModule, onMenuOpen }) {
+export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, setView, activeModule, onMenuOpen }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -565,7 +565,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
           </svg>
         </button>
-        {setView && <button onClick={() => setView('projects')} style={{fontSize:12,color:'var(--text-muted)',background:'none',border:'none',cursor:'pointer',padding:'2px 6px'}}>‹ Projects</button>}
         <div className='mode-toggle'>
           <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
           <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
@@ -578,14 +577,14 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         {activeProject && (
           <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
         )}
-        {activeProject && activeSessionId && messages.length > 0 && (
+        {setView && (
           <button
-            onClick={() => { setActiveSessionId(null); setView('projects'); }}
+            onClick={() => setView('projects')}
             style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
               cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
-            title='Back to project history'
+            title='Back to projects'
           >
-            ‹ {activeProject.name}
+            ‹ Projects
           </button>
         )}
         {autoCaptured && (
