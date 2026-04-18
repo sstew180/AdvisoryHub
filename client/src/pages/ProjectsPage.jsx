@@ -197,7 +197,7 @@ function ProjectHistoryTab({ projectId, setActiveSessionId, setView, onClose }) 
     }
     return order.map(g => ({ label: g, sessions: groups[g] }));
   };
-  const openSession = (sessionId) => { setActiveSessionId(sessionId); setView('chat'); onClose(); };
+  const openSession = (sessionId) => { setActiveSessionId(sessionId); setView('chat'); };
   if (loading) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading sessions...</p>;
   if (sessions.length === 0) return <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions in this project yet.</p>;
   return (
@@ -349,7 +349,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
           </button>
           <button className='mobile-back' onClick={() => setView('chat')}>‹ Chat</button>
           <button className='btn btn-secondary' onClick={() => setEditing(null)}>&larr; Back</button>
-          <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
+          <div className='page-title' style={{ margin: 0 }}>{editing.id ? (editing.parent_id ? 'Edit Sub-Project' : 'Edit Project') : 'New Project'}</div>
         </div>
 
         <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
@@ -468,6 +468,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                 <ProjectTags p={p} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+                <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => { setEditing(p); setActiveTab('history'); }}>View</button>
                 <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(p)}>Edit</button>
                 {activeProject?.id === p.id
                   ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
@@ -499,6 +500,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                   <ProjectTags p={sp} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+                  <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => { setEditing(sp); setActiveTab('history'); }}>View</button>
                   <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(sp)}>Edit</button>
                   {activeProject?.id === sp.id
                     ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
