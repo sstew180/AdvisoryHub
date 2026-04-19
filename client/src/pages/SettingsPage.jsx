@@ -65,19 +65,31 @@ const PRESETS = {
 export default function SettingsPage({ session, onMenuOpen }) {
   const [rules, setRules] = useState([]);
   const [email, setEmail] = useState('');
+  const [theme, setTheme] = useState('light');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [openCategories, setOpenCategories] = useState({});
 
   useEffect(() => {
-    supabase.from('profiles').select('prompt_rules').eq('id', session.user.id).single()
-      .then(({ data }) => { if (data) setRules(data.prompt_rules || []); });
+    supabase.from('profiles').select('prompt_rules, theme').eq('id', session.user.id).single()
+      .then(({ data }) => {
+        if (data) {
+          setRules(data.prompt_rules || []);
+          setTheme(data.theme || 'light');
+        }
+      });
     setEmail(session.user.email || '');
   }, [session]);
 
+  const applyTheme = (t) => {
+    setTheme(t);
+    document.body.classList.toggle('dark', t === 'dark');
+  };
+
   const save = async () => {
     setSaving(true);
-    await supabase.from('profiles').update({ prompt_rules: rules }).eq('id', session.user.id);
+    await supabase.from('profiles').update({ prompt_rules: rules, theme }).eq('id', session.user.id);
+    document.body.classList.toggle('dark', theme === 'dark');
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -88,7 +100,6 @@ export default function SettingsPage({ session, onMenuOpen }) {
 
   const applyPreset = (preset) => {
     setRules([...PRESETS[preset]]);
-    // Open any categories that have newly active rules
     const newRules = PRESETS[preset];
     const toOpen = {};
     RULES.forEach(cat => {
@@ -102,7 +113,6 @@ export default function SettingsPage({ session, onMenuOpen }) {
   };
 
   const activeCount = rules.length;
-
   const categoryActiveCount = (cat) => cat.rules.filter(r => rules.includes(r.id)).length;
 
   return (
@@ -120,8 +130,27 @@ export default function SettingsPage({ session, onMenuOpen }) {
 
       <div className='page-content'>
 
-        {/* Account section */}
+        {/* Theme section */}
         <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Appearance</div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {['light', 'dark'].map(t => (
+              <button key={t} onClick={() => applyTheme(t)}
+                style={{
+                  padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer',
+                  border: '1px solid ' + (theme === t ? 'var(--accent)' : 'var(--border)'),
+                  background: theme === t ? 'rgba(0,145,164,0.08)' : 'var(--bg)',
+                  color: theme === t ? 'var(--accent)' : 'var(--text-secondary)',
+                  fontWeight: theme === t ? 600 : 400, fontSize: 13, transition: 'all 0.15s',
+                }}>
+                {t === 'light' ? 'Light' : 'Dark'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Account section */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 24, marginBottom: 32 }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Account</div>
           <div className='form-group'>
             <label className='form-label'>Email</label>
@@ -151,11 +180,11 @@ export default function SettingsPage({ session, onMenuOpen }) {
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Presets:</span>
-            <button className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset('none')}>None</button>
-            <button className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset('base')}>Base</button>
-            <button className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset('strict')}>Strict</button>
-            <button className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset('qld_gov')}>Qld Gov</button>
-            <button className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset('advisory')}>Advisory</button>
+            {['none', 'base', 'strict', 'qld_gov', 'advisory'].map(p => (
+              <button key={p} className='btn btn-secondary' style={{ fontSize: 11 }} onClick={() => applyPreset(p)}>
+                {p === 'none' ? 'None' : p === 'base' ? 'Base' : p === 'strict' ? 'Strict' : p === 'qld_gov' ? 'Qld Gov' : 'Advisory'}
+              </button>
+            ))}
           </div>
 
           {RULES.map(cat => {
@@ -164,8 +193,7 @@ export default function SettingsPage({ session, onMenuOpen }) {
             return (
               <div key={cat.category} style={{ marginBottom: 4, border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-                <div
-                  onClick={() => toggleCategory(cat.category)}
+                <div onClick={() => toggleCategory(cat.category)}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 14px', cursor: 'pointer', background: isOpen ? 'var(--surface)' : 'var(--bg)',
                     transition: 'background 0.15s', userSelect: 'none' }}>
@@ -189,8 +217,7 @@ export default function SettingsPage({ session, onMenuOpen }) {
                 {isOpen && (
                   <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)' }}>
                     {cat.rules.map(rule => (
-                      <div key={rule.id}
-                        onClick={() => toggleRule(rule.id)}
+                      <div key={rule.id} onClick={() => toggleRule(rule.id)}
                         style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 10px',
                           borderRadius: 'var(--radius)', cursor: 'pointer', marginBottom: 4,
                           background: rules.includes(rule.id) ? 'rgba(0,145,164,0.06)' : 'transparent',

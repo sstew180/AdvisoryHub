@@ -137,7 +137,7 @@ function ProjectMemoriesTab({ projectId }) {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: projectSessions } = await supabase.from('sessions').select('id').eq('project_id', projectId);
     const sessionIds = new Set((projectSessions || []).map(s => s.id));
-    const { data: allEmbeddings } = await supabase.from('session_embeddings').select('id, content, created_at, session_id').eq('user_id', user.id).order('created_at', { ascending: false });
+    const { data: allEmbeddings } = await supabase.from('session_embeddings').select('id, content, session_id').eq('user_id', user.id);
     if (allEmbeddings) setMemories(allEmbeddings.filter(m => m.session_id && sessionIds.has(m.session_id)));
     setLoading(false);
   };
@@ -161,7 +161,7 @@ function ProjectMemoriesTab({ projectId }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, color: tag.color, fontWeight: 600 }}>{tag.label}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{new Date(m.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>{formatContent(m.content)}</div>
             </div>
@@ -411,7 +411,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             </>
           )}
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
-          {activeTab === 'memories' && editing.id && <ProjectMemoriesTab key={activeTab} projectId={editing.id} />}
+          {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
             <ProjectHistoryTab projectId={editing.id} project={editing} setActiveSessionId={setActiveSessionId} setActiveProject={setActiveProject} setView={setView} onClose={() => setEditing(null)} />
           )}

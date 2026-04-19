@@ -56,6 +56,16 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Load and apply theme from profile
+  useEffect(() => {
+    if (!session) return;
+    supabase.from('profiles').select('theme').eq('id', session.user.id).single()
+      .then(({ data }) => {
+        if (data?.theme === 'dark') document.body.classList.add('dark');
+        else document.body.classList.remove('dark');
+      });
+  }, [session]);
+
   useEffect(() => {
     if (!session) return;
     setModulesLoading(true);
