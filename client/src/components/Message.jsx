@@ -1,14 +1,13 @@
-
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import axios from 'axios';
 const API = import.meta.env.VITE_API_URL;
 
-export default function Message({ message, session, sessionId, onPin }) {
+export default function Message({ message, session, sessionId, projectId, onPin }) {
   const isAssistant = message.role === 'assistant';
   const pin = async () => {
     await axios.post(API + '/api/pin-memory', {
-      userId: session.user.id, sessionId, content: message.content
+      userId: session.user.id, sessionId, projectId: projectId || null, content: message.content
     });
     onPin && onPin();
   };
@@ -26,4 +25,3 @@ export default function Message({ message, session, sessionId, onPin }) {
     </div>
   );
 }
-
