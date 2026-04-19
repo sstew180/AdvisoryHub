@@ -41,9 +41,17 @@ export default function Message({ message, session, sessionId, projectId, onPin,
 
   const audit = () => {
     onInject && onInject(
-      'Audit the previous response against the active writing rules. Check for: abstract concepts without evidence, movement verbs without evidence, rhetorical contrasts, buzzwords, slogans, unsupported claims, motive speculation, and flattery. List each violation with the specific sentence and what rule it breaks. If there are no violations say so plainly.'
+      'Audit the previous response against the active writing rules. Check for: abstract concepts without evidence, movement verbs without evidence, rhetorical contrasts, buzzwords, slogans, unsupported claims, motive speculation, and flattery. List each violation with the specific sentence and what rule it breaks. If there are no violations say so plainly. Note: these violations reflect the current active writing rules in Settings -- to tighten output by default, update your rules in Settings.'
     );
   };
+
+  const fixViolations = () => {
+    onInject && onInject(
+      'Rewrite the response that was audited, fixing every violation identified. Do not list the violations again. Do not explain what you changed. Just produce the corrected version.'
+    );
+  };
+
+  const isAuditResponse = isAssistant && message.content.includes('Violation') && message.content.includes('rule it breaks');
 
   const scrutinise = (role) => {
     setScrutinyOpen(false);
@@ -58,6 +66,16 @@ export default function Message({ message, session, sessionId, projectId, onPin,
       </div>
       <div className='message-actions'>
         <button className='action-btn' onClick={copy}>Copy</button>
+        {isAssistant && isAuditResponse && isLast && (
+          <button
+            className='action-btn'
+            onClick={fixViolations}
+            style={{ color: 'var(--accent)', fontWeight: 500 }}
+            title='Rewrite the audited response fixing all violations'
+          >
+            Fix it
+          </button>
+        )}
         {isAssistant && (
           <button
             className='action-btn'
