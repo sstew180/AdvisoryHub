@@ -51,7 +51,7 @@ export default function Message({ message, session, sessionId, projectId, onPin,
     );
   };
 
-  const isAuditResponse = isAssistant && message.content.includes('Violation') && message.content.includes('rule it breaks');
+
 
   const scrutinise = (role) => {
     setScrutinyOpen(false);
@@ -66,16 +66,7 @@ export default function Message({ message, session, sessionId, projectId, onPin,
       </div>
       <div className='message-actions'>
         <button className='action-btn' onClick={copy}>Copy</button>
-        {isAssistant && isAuditResponse && isLast && (
-          <button
-            className='action-btn'
-            onClick={fixViolations}
-            style={{ color: 'var(--accent)', fontWeight: 500 }}
-            title='Rewrite the audited response fixing all violations'
-          >
-            Fix it
-          </button>
-        )}
+
         {isAssistant && (
           <button
             className='action-btn'
@@ -94,6 +85,13 @@ export default function Message({ message, session, sessionId, projectId, onPin,
               title='Check this response against your writing rules'
             >
               Audit
+            </button>
+            <button
+              className='action-btn'
+              onClick={fixViolations}
+              title='Rewrite fixing any rule violations'
+            >
+              Fix it
             </button>
             <div style={{ position: 'relative' }}>
               <button
