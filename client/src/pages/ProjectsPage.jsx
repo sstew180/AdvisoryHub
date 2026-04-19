@@ -411,7 +411,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             </>
           )}
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
-          {activeTab === 'memories' && editing.id && <ProjectMemoriesTab projectId={editing.id} />}
+          {activeTab === 'memories' && editing.id && <ProjectMemoriesTab key={activeTab} projectId={editing.id} />}
           {activeTab === 'history' && editing.id && (
             <ProjectHistoryTab projectId={editing.id} project={editing} setActiveSessionId={setActiveSessionId} setActiveProject={setActiveProject} setView={setView} onClose={() => setEditing(null)} />
           )}
