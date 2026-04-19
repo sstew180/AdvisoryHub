@@ -20,9 +20,10 @@ const WORKING_QUESTIONS = [
   { id: 'expertise', question: 'How would you describe your expertise in risk, audit, and insurance?', options: ['Specialist -- this is my core domain', 'Practitioner -- solid working knowledge', 'Generalist -- I work in related areas but am not a specialist'] },
 ];
 
-function StyleWizard({ type, onComplete, onCancel, generating }) {
+function StyleWizard({ type, onComplete, onCancel }) {
   const questions = type === 'writing' ? WRITING_QUESTIONS : WORKING_QUESTIONS;
   const [answers, setAnswers] = useState({});
+  const [generating, setGenerating] = useState(false);
   const title = type === 'writing' ? 'Build your writing style' : 'Build your working style';
   const desc = type === 'writing'
     ? 'Answer these questions and AdvisoryHub will generate a communication style profile for you.'
@@ -73,7 +74,7 @@ function StyleWizard({ type, onComplete, onCancel, generating }) {
         <button
           className='btn btn-primary'
           disabled={!allAnswered || generating}
-          onClick={() => onComplete(questions.map(q => ({ question: q.question, answer: answers[q.id] })))}
+        onClick={async () => { setGenerating(true); await onComplete(questions.map(q => ({ question: q.question, answer: answers[q.id] }))); setGenerating(false); }}
         >
           {generating ? 'Generating...' : 'Generate my profile'}
         </button>
@@ -94,8 +95,7 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
   const [saved, setSaved] = useState(false);
   const [showWritingWizard, setShowWritingWizard] = useState(false);
   const [showWorkingWizard, setShowWorkingWizard] = useState(false);
-  const [generatingWriting, setGeneratingWriting] = useState(false);
-  const [generatingWorking, setGeneratingWorking] = useState(false);
+
 
   useEffect(() => {
     supabase.from('profiles').select('*').eq('id', session.user.id).single()
@@ -145,7 +145,6 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
   };
 
   const handleWritingWizard = async (answers) => {
-    setGeneratingWriting(true);
     try {
       const res = await fetch(`${API}/api/generate-style`, {
         method: 'POST',
@@ -160,11 +159,9 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
     } catch (err) {
       console.error('Writing wizard error:', err);
     }
-    setGeneratingWriting(false);
   };
 
   const handleWorkingWizard = async (answers) => {
-    setGeneratingWorking(true);
     try {
       const res = await fetch(`${API}/api/generate-style`, {
         method: 'POST',
@@ -179,7 +176,6 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
     } catch (err) {
       console.error('Working wizard error:', err);
     }
-    setGeneratingWorking(false);
   };
 
   const up = (field, value) => setProfile(p => ({ ...p, [field]: value }));
@@ -273,6 +269,7 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
             </div>
             {showWritingWizard ? (
               <StyleWizard
+                key='writing-wizard'
                 type='writing'
                 generating={generatingWriting}
                 onComplete={handleWritingWizard}
@@ -306,6 +303,7 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
             </div>
             {showWorkingWizard ? (
               <StyleWizard
+                key='working-wizard'
                 type='working'
                 generating={generatingWorking}
                 onComplete={handleWorkingWizard}
