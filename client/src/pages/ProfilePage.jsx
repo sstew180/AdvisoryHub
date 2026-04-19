@@ -271,7 +271,6 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
               <StyleWizard
                 key='writing-wizard'
                 type='writing'
-                generating={generatingWriting}
                 onComplete={handleWritingWizard}
                 onCancel={() => setShowWritingWizard(false)}
               />
@@ -305,7 +304,6 @@ export default function ProfilePage({ session, onMenuOpen, setView, activeModule
               <StyleWizard
                 key='working-wizard'
                 type='working'
-                generating={generatingWorking}
                 onComplete={handleWorkingWizard}
                 onCancel={() => setShowWorkingWizard(false)}
               />
