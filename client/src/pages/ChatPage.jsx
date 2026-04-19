@@ -25,12 +25,6 @@ const DEPTH_OPTIONS = [
   { id: 'critical', label: 'Critical' },
 ];
 
-const MODE_DESCRIPTIONS = {
-  guided: 'Guided mode draws on your profile, project context, and relevant frameworks to give you well-rounded advice.',
-  direct: 'Direct mode answers immediately with no preamble. Best for quick questions and specific requests.',
-  inquisitive: 'Inquisitive mode asks you one question at a time to help you think through a problem before producing any output.',
-};
-
 const isMobile = () => window.innerWidth < 768;
 
 const FALLBACK_GENERAL_PROMPTS = [
@@ -87,22 +81,6 @@ async function generatePersonalisedPrompts(profile, activeProject) {
   return null;
 }
 
-// Speak text using Web Speech API SpeechSynthesis
-function speakText(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-AU';
-  utterance.rate = 1.0;
-  utterance.pitch = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const preferred = voices.find(v => v.lang === 'en-AU') ||
-    voices.find(v => v.lang.startsWith('en-')) ||
-    voices[0];
-  if (preferred) utterance.voice = preferred;
-  window.speechSynthesis.speak(utterance);
-}
-
 function StatusCallout({ steps, visible }) {
   const [opacity, setOpacity] = useState(0);
 
@@ -154,12 +132,9 @@ function StatusCallout({ steps, visible }) {
   );
 }
 
-function EmptyState({ activeProject, activeModule, onPromptClick, userId, mode }) {
+function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   const [prompts, setPrompts] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hintDismissed, setHintDismissed] = useState(() => {
-    try { return localStorage.getItem('ah-hint-dismissed') === '1'; } catch { return false; }
-  });
   const fallback = activeProject ? FALLBACK_PROJECT_PROMPTS : FALLBACK_GENERAL_PROMPTS;
   const subtitle = activeProject
     ? 'Active project: ' + activeProject.name
@@ -180,11 +155,6 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId, mode }
 
   useEffect(() => { load(); }, [load]);
 
-  const dismissHint = () => {
-    try { localStorage.setItem('ah-hint-dismissed', '1'); } catch {}
-    setHintDismissed(true);
-  };
-
   const displayPrompts = prompts || fallback;
 
   return (
@@ -193,32 +163,6 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId, mode }
         <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>AdvisoryHub</div>
         <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</div>
       </div>
-
-      {/* Welcome hint -- only shows until dismissed */}
-      {!hintDismissed && mode !== 'inquisitive' && (
-        <div style={{
-          marginBottom: 20, padding: '12px 16px', borderRadius: 'var(--radius)',
-          background: 'rgba(0,145,164,0.06)', border: '1px solid rgba(0,145,164,0.2)',
-          display: 'flex', alignItems: 'flex-start', gap: 12,
-        }}>
-          <div style={{ fontSize: 18, flexShrink: 0 }}>💡</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, marginBottom: 3 }}>
-              Try Inquisitive mode
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Switch to Inquisitive in the topbar and tell AdvisoryHub what you are working on.
-              It will ask you one question at a time to help you think it through before writing anything.
-            </div>
-          </div>
-          <button onClick={dismissHint}
-            style={{ background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}>
-            ×
-          </button>
-        </div>
-      )}
-
       {loading ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[...Array(6)].map((_, i) => (
@@ -256,7 +200,8 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId, mode }
   );
 }
 
-const SILENCE_TIMEOUT_MS = 10000;
+// Mic button component using Web Speech API -- continuous mode
+const SILENCE_TIMEOUT_MS = 10000; // stop recording after 10s of silence
 
 function MicButton({ onTranscript, disabled }) {
   const [listening, setListening] = useState(false);
@@ -275,6 +220,7 @@ function MicButton({ onTranscript, disabled }) {
   const resetSilenceTimer = () => {
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
+      // Silence timeout -- stop recording
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
@@ -300,6 +246,7 @@ function MicButton({ onTranscript, disabled }) {
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
+      // Reset silence timer on every result
       resetSilenceTimer();
       let transcript = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -312,7 +259,7 @@ function MicButton({ onTranscript, disabled }) {
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
-    resetSilenceTimer();
+    resetSilenceTimer(); // start silence timer immediately
   };
 
   if (!supported) return null;
@@ -346,7 +293,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [mode, setMode] = useState('guided');
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [formatControls, setFormatControls] = useState({ length: null, format: null, depth: null });
   const [formatOpen, setFormatOpen] = useState(!isMobile());
   const [autoCaptured, setAutoCaptured] = useState(null);
@@ -356,16 +302,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [attachedFile, setAttachedFile] = useState(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [sessionArchived, setSessionArchived] = useState(false);
-  const [hoveredMode, setHoveredMode] = useState(null);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    if (mode !== 'inquisitive' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-  }, [mode]);
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -430,9 +370,69 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   const removeAttachment = () => setAttachedFile(null);
 
+  // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
     setInput(prev => prev ? prev + ' ' + transcript : transcript);
     setTimeout(() => textareaRef.current?.focus(), 50);
+  };
+
+  const injectPrompt = (prompt) => {
+    setInput(prompt);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      // Auto-send the injected prompt
+      setInput('');
+      const doSend = async () => {
+        const text = prompt;
+        const sessionId = await ensureSession();
+        const userMsg = { role: 'user', content: text };
+        await supabase.from('messages').insert({ ...userMsg, session_id: sessionId });
+        setMessages(prev => [...prev, userMsg]);
+        setStreaming(true);
+        setStatusSteps([]);
+        setStatusVisible(true);
+        let assistantText = '';
+        let hasStartedText = false;
+        try {
+          const msgPayload = [...messages, { role: 'user', content: text }]
+            .map(m => ({ role: m.role, content: m.content }));
+          const response = await fetch(API + '/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: session.user.id, sessionId,
+              projectId: activeProject?.id || null,
+              moduleId: activeModule?.id || null,
+              messages: msgPayload, mode, ruleOverrides: {}, formatControls: {},
+            }),
+          });
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            for (const line of chunk.split('\n').filter(l => l.startsWith('data: '))) {
+              const data = line.slice(6);
+              if (data === '[DONE]') break;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.status) setStatusSteps(prev => [...prev, parsed.status]);
+                else if (parsed.text) {
+                  if (!hasStartedText) { hasStartedText = true; setMessages(prev => [...prev, { role: 'assistant', content: '' }]); }
+                  assistantText += parsed.text;
+                  setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
+                }
+              } catch {}
+            }
+          }
+          await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
+        } catch (err) { console.error(err); }
+        setStreaming(false);
+        setTimeout(() => { setStatusVisible(false); setTimeout(() => setStatusSteps([]), 400); }, 2000);
+      };
+      doSend();
+    }, 50);
   };
 
   const handleArchiveSession = async () => {
@@ -575,12 +575,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           } catch {}
         }
       }
-
-      // Speak response if voice enabled and in inquisitive mode
-      if (voiceEnabled && mode === 'inquisitive' && assistantText) {
-        speakText(assistantText);
-      }
-
       await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
       const { data: allMsgs } = await supabase.from('messages')
         .select('*').eq('session_id', sessionId).order('created_at');
@@ -620,18 +614,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes micPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .mode-tooltip {
-          position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-          background: var(--text-primary); color: white; font-size: 11px; line-height: 1.4;
-          padding: 6px 10px; border-radius: var(--radius); white-space: normal;
-          width: 200px; text-align: center; pointer-events: none; z-index: 100;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-          animation: fadeIn 0.15s ease;
-        }
-        .mode-tooltip::before {
-          content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
-          border: 5px solid transparent; border-bottom-color: var(--text-primary);
-        }
       `}</style>
 
       <div className='topbar'>
@@ -642,60 +624,27 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             <rect x='2' y='14' width='16' height='2' rx='1' fill='currentColor'/>
           </svg>
         </button>
-
-        {/* Mode toggle with tooltips */}
-        <div className='mode-toggle' style={{ position: 'relative' }}>
-          {['guided', 'direct', 'inquisitive'].map(m => (
-            <div key={m} style={{ position: 'relative' }}>
-              <button
-                className={'mode-btn' + (mode === m ? ' active' : '')}
-                onClick={() => setMode(m)}
-                onMouseEnter={() => setHoveredMode(m)}
-                onMouseLeave={() => setHoveredMode(null)}
-                title={MODE_DESCRIPTIONS[m]}
-              >
-                {m.charAt(0).toUpperCase() + m.slice(1)}
-              </button>
-              {hoveredMode === m && (
-                <div className='mode-tooltip'>{MODE_DESCRIPTIONS[m]}</div>
-              )}
-            </div>
-          ))}
+        <div className='mode-toggle'>
+          <button className={'mode-btn' + (mode === 'guided' ? ' active' : '')} onClick={() => setMode('guided')}>Guided</button>
+          <button className={'mode-btn' + (mode === 'direct' ? ' active' : '')} onClick={() => setMode('direct')}>Direct</button>
         </div>
-
-        {/* Voice toggle -- only in inquisitive mode */}
-        {mode === 'inquisitive' && (
-          <button
-            onClick={() => {
-              if (window.speechSynthesis) window.speechSynthesis.cancel();
-              setVoiceEnabled(v => !v);
-            }}
-            title={voiceEnabled ? 'Voice on -- click to turn off' : 'Voice off -- click to turn on'}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 16, padding: '2px 4px',
-              color: voiceEnabled ? 'var(--accent)' : 'var(--text-muted)',
-              transition: 'color 0.15s',
-            }}
-          >
-            {voiceEnabled ? '🔊' : '🔇'}
-          </button>
-        )}
-
         {activeModule && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{activeModule.name}</span>
           </div>
         )}
         {activeProject && (
-          <div
-            className='project-indicator'
-            onClick={() => setView && setView('projects')}
-            style={{ cursor: 'pointer' }}
-            title='Back to project'
+          <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
+        )}
+        {setView && (
+          <button
+            onClick={() => setView('projects')}
+            style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
+              cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
+            title='Back to projects'
           >
-            Project: <span>{activeProject.name}</span>
-          </div>
+            ‹ Projects
+          </button>
         )}
         {autoCaptured && (
           <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)',
@@ -732,22 +681,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         )}
       </div>
 
-      {/* Mode banner -- shows below topbar when not in guided mode */}
-      {mode !== 'guided' && (
-        <div style={{
-          padding: '6px 20px', fontSize: 11, color: 'var(--text-muted)',
-          background: mode === 'inquisitive' ? 'rgba(0,145,164,0.04)' : 'var(--surface)',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-        }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-            background: mode === 'inquisitive' ? 'var(--accent)' : 'var(--text-muted)',
-          }} />
-          {MODE_DESCRIPTIONS[mode]}
-        </div>
-      )}
-
       <div className='chat-area'>
         {sessionArchived && (
           <div style={{
@@ -766,12 +699,15 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             activeModule={activeModule}
             onPromptClick={handlePromptClick}
             userId={session.user.id}
-            mode={mode}
           />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
-            sessionId={activeSessionId} onPin={() => console.log('Pinned')} />
+            sessionId={activeSessionId}
+            projectId={activeProject?.id || null}
+            isLast={i === messages.length - 1}
+            onPin={() => {}}
+            onInject={injectPrompt} />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -867,7 +803,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder={mode === 'inquisitive' ? 'Tell AdvisoryHub what you are working on...' : 'Ask AdvisoryHub... (Shift+Enter for new line)'}
+                placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
                 rows={1}
               />
               <div className='input-footer'>
