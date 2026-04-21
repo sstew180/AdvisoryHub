@@ -405,11 +405,22 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const [activeTab, setActiveTab] = useState('details');
   const [projectCounts, setProjectCounts] = useState({});
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userSettings, setUserSettings] = useState({});
+  const [togglingId, setTogglingId] = useState(null);
 
   useEffect(() => {
     load();
     supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
       .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
+    // Load user document toggle settings
+    supabase.from('user_library_settings').select('document_id, enabled').eq('user_id', session.user.id)
+      .then(({ data }) => {
+        if (data) {
+          const map = {};
+          data.forEach(s => { map[s.document_id] = s.enabled; });
+          setUserSettings(map);
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -446,8 +457,29 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   };
 
   const loadDocs = async (id) => {
-    const { data } = await axios.get(API + '/api/documents/' + id);
-    setDocs(data);
+    try {
+      const res = await axios.get(`${API}/api/library?userId=${session.user.id}`);
+      setDocs((res.data || []).filter(d => d.project_id === id));
+    } catch { setDocs([]); }
+  };
+
+  const isDocEnabled = (docId) => {
+    if (docId in userSettings) return userSettings[docId];
+    return true;
+  };
+
+  const toggleDoc = async (docId) => {
+    setTogglingId(docId);
+    const newEnabled = !isDocEnabled(docId);
+    try {
+      await supabase.from('user_library_settings').upsert({
+        user_id: session.user.id,
+        document_id: docId,
+        enabled: newEnabled,
+      }, { onConflict: 'user_id,document_id' });
+      setUserSettings(prev => ({ ...prev, [docId]: newEnabled }));
+    } catch (err) { console.error('Toggle error:', err); }
+    setTogglingId(null);
   };
 
   const save = async () => {
@@ -467,13 +499,26 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
     const file = e.target.files[0]; if (!file) return;
     setUploading(true);
     const fd = new FormData();
-    fd.append('file', file); fd.append('projectId', editing.id); fd.append('userId', session.user.id);
-    await axios.post(API + '/api/documents/upload', fd);
-    loadDocs(editing.id); setUploading(false);
+    fd.append('file', file);
+    fd.append('projectId', editing.id);
+    fd.append('userId', session.user.id);
+    fd.append('category', 'Project');
+    fd.append('domain', 'General');
+    fd.append('jurisdiction', 'Queensland');
+    try {
+      await axios.post(API + '/api/library/upload', fd);
+      loadDocs(editing.id);
+    } catch { alert('Upload failed. Please try again.'); }
+    setUploading(false);
+    e.target.value = '';
   };
 
   const delDoc = async (id) => {
-    await axios.delete(API + '/api/documents/' + id); loadDocs(editing.id);
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API}/api/library/${id}?userId=${session.user.id}`);
+      setDocs(prev => prev.filter(d => d.id !== id));
+    } catch { alert('Delete failed.'); }
   };
 
   const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }));
@@ -584,20 +629,52 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
           {activeTab === 'rules' && <ProjectRulesTab editing={editing} setEditing={setEditing} />}
           {activeTab === 'documents' && editing.id && (
             <>
-              <label className='btn btn-secondary' style={{ cursor: 'pointer', marginBottom: 12, display: 'inline-block' }}>
-                {uploading ? 'Uploading...' : 'Upload document (PDF, DOCX, TXT)'}
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                Documents uploaded here are embedded and used by the AI when this project is active. Use the toggle to temporarily exclude a document from retrieval without deleting it.
+              </div>
+              <label className='btn btn-secondary' style={{ cursor: 'pointer', marginBottom: 16, display: 'inline-block' }}>
+                {uploading ? 'Uploading and embedding...' : '+ Upload document (PDF, DOCX, TXT, MD)'}
                 <input type='file' style={{ display: 'none' }} accept='.pdf,.docx,.txt,.md' onChange={uploadDoc} />
               </label>
-              {docs.map(d => (
-                <div key={d.id} className='card'
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div className='card-title'>{d.filename}</div>
-                    <div className='card-meta'>{new Date(d.created_at).toLocaleDateString()}</div>
+              {docs.map(d => {
+                const enabled = isDocEnabled(d.id);
+                const toggling = togglingId === d.id;
+                return (
+                  <div key={d.id} className='card'
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: enabled ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <div className='card-title' style={{ margin: 0 }}>{d.title || d.filename}</div>
+                        {!enabled && (
+                          <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+                            background: '#fae8e8', color: 'var(--danger)', fontWeight: 500 }}>
+                            Excluded
+                          </span>
+                        )}
+                      </div>
+                      <div className='card-meta'>{new Date(d.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+                      <button
+                        onClick={() => toggleDoc(d.id)}
+                        disabled={toggling}
+                        title={enabled ? 'Exclude from AI retrieval' : 'Include in AI retrieval'}
+                        style={{
+                          fontSize: 11, padding: '4px 10px', borderRadius: 'var(--radius)',
+                          border: '1px solid ' + (enabled ? 'var(--accent)' : 'var(--border)'),
+                          background: enabled ? 'rgba(0,145,164,0.08)' : 'var(--surface)',
+                          color: enabled ? 'var(--accent)' : 'var(--text-muted)',
+                          cursor: toggling ? 'not-allowed' : 'pointer',
+                          fontWeight: 500, transition: 'all 0.15s', opacity: toggling ? 0.5 : 1,
+                        }}>
+                        {toggling ? '...' : enabled ? 'On' : 'Off'}
+                      </button>
+                      <button className='btn btn-danger' style={{ fontSize: 12, padding: '4px 10px' }}
+                        onClick={() => delDoc(d.id)}>Delete</button>
+                    </div>
                   </div>
-                  <button className='btn btn-danger' style={{ fontSize: 12 }} onClick={() => delDoc(d.id)}>Remove</button>
-                </div>
-              ))}
+                );
+              })}
               {docs.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents uploaded yet.</p>}
             </>
           )}
