@@ -404,8 +404,13 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
   const [expanded, setExpanded] = useState({});
   const [activeTab, setActiveTab] = useState('details');
   const [projectCounts, setProjectCounts] = useState({});
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
+      .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
+  }, []);
 
   useEffect(() => {
     if (editing?.id) loadDocs(editing.id);
@@ -493,7 +498,7 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
       { id: 'rules', label: 'Writing Rules' },
       ...(editing.id ? [
         { id: 'documents', label: 'Documents' },
-        { id: 'library', label: 'Library' },
+        ...(isAdmin ? [{ id: 'library', label: 'Library' }] : []),
         { id: 'memories', label: 'Memories' },
         { id: 'history', label: 'History' },
       ] : []),
