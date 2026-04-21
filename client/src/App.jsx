@@ -52,7 +52,14 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session); setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      // Reset user-specific state on account change
+      setActiveProject(null);
+      setActiveSessionId(null);
+      setActiveModule(null);
+      setModules([]);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
