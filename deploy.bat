@@ -16,12 +16,14 @@ git commit -m "deploy: %date% %time%"
 echo [3/4] Pushing to GitHub...
 git push origin main
 
-echo [4/4] Deploying to Vercel...
+echo [4/4] Deploying frontend to Vercel...
 cd client
-vercel --prod
+vercel --prod --yes
 
 echo.
 echo ============================================
-echo  Done
+echo  Frontend deployed.
+echo  Backend (Render) auto-deploys in 3-5 mins.
+echo  Test backend changes after waiting.
 echo ============================================
 pause
