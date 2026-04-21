@@ -223,12 +223,13 @@ export default function App() {
           />
         )}
         {view === 'library' && (
-          <LibraryPage
-            session={session}
-            setView={setView}
-            onMenuOpen={() => setSidebarOpen(true)}
-          />
-        )}
+  <LibraryPage
+    session={session}
+    setView={setView}
+    activeProject={activeProject}
+    onMenuOpen={() => setSidebarOpen(true)}
+  />
+)}
         {view === 'settings' && (
           <SettingsPage session={session} onMenuOpen={() => setSidebarOpen(true)} />
         )}

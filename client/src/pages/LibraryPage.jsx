@@ -23,6 +23,8 @@ export default function LibraryPage({ session, onMenuOpen, setView }) {
   const [editingDoc, setEditingDoc] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', jurisdiction: '', description: '', sourceUrl: '', selectedProjectIds: [] });
   const [saving, setSaving] = useState(false);
+  const [userSettings, setUserSettings] = useState({}); // docId -> enabled (true/false)
+  const [togglingId, setTogglingId] = useState(null);
 
   const loadDocs = () => {
     setLoading(true);
@@ -32,14 +34,50 @@ export default function LibraryPage({ session, onMenuOpen, setView }) {
       .catch(() => { setError('Could not load library. The server may be starting up -- try again in 30 seconds.'); setLoading(false); });
   };
 
+  const loadUserSettings = async () => {
+    const { data } = await supabase
+      .from('user_library_settings')
+      .select('document_id, enabled')
+      .eq('user_id', session.user.id);
+    if (data) {
+      const map = {};
+      data.forEach(s => { map[s.document_id] = s.enabled; });
+      setUserSettings(map);
+    }
+  };
+
   useEffect(() => {
     loadDocs();
+    loadUserSettings();
     supabase.from('profiles').select('access_tier').eq('id', session.user.id).single()
       .then(({ data }) => setIsAdmin(data?.access_tier === 'admin'));
     supabase.from('projects').select('id, name, parent_id').eq('user_id', session.user.id)
       .is('archived_at', null).order('name')
       .then(({ data }) => { if (data) setProjects(data); });
   }, []);
+
+  // Returns true if the doc is enabled for this user (default is true unless explicitly disabled)
+  const isDocEnabled = (docId) => {
+    if (docId in userSettings) return userSettings[docId];
+    return true; // default enabled
+  };
+
+  const toggleDoc = async (docId) => {
+    setTogglingId(docId);
+    const currentlyEnabled = isDocEnabled(docId);
+    const newEnabled = !currentlyEnabled;
+    try {
+      await supabase.from('user_library_settings').upsert({
+        user_id: session.user.id,
+        document_id: docId,
+        enabled: newEnabled,
+      }, { onConflict: 'user_id,document_id' });
+      setUserSettings(prev => ({ ...prev, [docId]: newEnabled }));
+    } catch (err) {
+      console.error('Toggle error:', err);
+    }
+    setTogglingId(null);
+  };
 
   const handleFilterChange = (cat) => {
     setFilter(cat);
@@ -431,9 +469,11 @@ export default function LibraryPage({ session, onMenuOpen, setView }) {
         const isAutoInjected = ['Skills', 'Templates', 'Organisation'].includes(d.category);
         const linkedProjectIds = d.project_ids || [];
         const isGlobal = linkedProjectIds.length === 0;
+        const enabled = isDocEnabled(d.id);
+        const toggling = togglingId === d.id;
 
         return (
-          <div key={d.id} className='card'>
+          <div key={d.id} className='card' style={{ opacity: enabled ? 1 : 0.6, transition: 'opacity 0.2s' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -460,6 +500,12 @@ export default function LibraryPage({ session, onMenuOpen, setView }) {
                       {projectNameMap[pid] || pid}
                     </span>
                   ))}
+                  {!enabled && (
+                    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20,
+                      background: '#fae8e8', color: 'var(--danger)', fontWeight: 500 }}>
+                      Disabled
+                    </span>
+                  )}
                 </div>
                 <div className='card-meta'>{d.jurisdiction}</div>
                 {d.description && (
@@ -467,6 +513,22 @@ export default function LibraryPage({ session, onMenuOpen, setView }) {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0, alignItems: 'center' }}>
+                {/* Enable/disable toggle */}
+                <button
+                  onClick={() => toggleDoc(d.id)}
+                  disabled={toggling}
+                  title={enabled ? 'Disable this document (AI will not use it)' : 'Enable this document'}
+                  style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 'var(--radius)',
+                    border: '1px solid ' + (enabled ? 'var(--accent)' : 'var(--border)'),
+                    background: enabled ? 'rgba(0,145,164,0.08)' : 'var(--surface)',
+                    color: enabled ? 'var(--accent)' : 'var(--text-muted)',
+                    cursor: toggling ? 'not-allowed' : 'pointer',
+                    fontWeight: 500, transition: 'all 0.15s',
+                    opacity: toggling ? 0.5 : 1,
+                  }}>
+                  {toggling ? '...' : enabled ? 'On' : 'Off'}
+                </button>
                 {d.source_url && (
                   <a href={d.source_url} target='_blank' rel='noopener noreferrer'
                     style={{ fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
