@@ -200,8 +200,7 @@ function EmptyState({ activeProject, activeModule, onPromptClick, userId }) {
   );
 }
 
-// Mic button component using Web Speech API -- continuous mode
-const SILENCE_TIMEOUT_MS = 10000; // stop recording after 10s of silence
+const SILENCE_TIMEOUT_MS = 10000;
 
 function MicButton({ onTranscript, disabled }) {
   const [listening, setListening] = useState(false);
@@ -211,20 +210,13 @@ function MicButton({ onTranscript, disabled }) {
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
   const clearSilenceTimer = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
   };
 
   const resetSilenceTimer = () => {
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
-      // Silence timeout -- stop recording
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        recognitionRef.current = null;
-      }
+      if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
       setListening(false);
     }, SILENCE_TIMEOUT_MS);
   };
@@ -246,7 +238,6 @@ function MicButton({ onTranscript, disabled }) {
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onresult = (e) => {
-      // Reset silence timer on every result
       resetSilenceTimer();
       let transcript = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -259,25 +250,20 @@ function MicButton({ onTranscript, disabled }) {
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
-    resetSilenceTimer(); // start silence timer immediately
+    resetSilenceTimer();
   };
 
   if (!supported) return null;
 
   return (
-    <button
-      onClick={toggle}
-      disabled={disabled}
+    <button onClick={toggle} disabled={disabled}
       title={listening ? 'Tap to stop recording' : 'Speak your prompt'}
       style={{
         background: 'none', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
         padding: '2px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: listening ? '#e53e3e' : 'var(--text-muted)',
-        transition: 'color 0.15s',
-        opacity: disabled ? 0.4 : 1,
-        animation: listening ? 'micPulse 1s ease-in-out infinite' : 'none',
-      }}
-    >
+        color: listening ? '#e53e3e' : 'var(--text-muted)', transition: 'color 0.15s',
+        opacity: disabled ? 0.4 : 1, animation: listening ? 'micPulse 1s ease-in-out infinite' : 'none',
+      }}>
       <svg width='16' height='16' viewBox='0 0 16 16' fill='currentColor'>
         <rect x='5' y='1' width='6' height='9' rx='3' />
         <path d='M2.5 7.5A5.5 5.5 0 0 0 8 13a5.5 5.5 0 0 0 5.5-5.5' stroke='currentColor' strokeWidth='1.5' fill='none' strokeLinecap='round'/>
@@ -286,6 +272,36 @@ function MicButton({ onTranscript, disabled }) {
       </svg>
     </button>
   );
+}
+
+// ─── Buffered SSE stream reader ───────────────────────────────────────────────
+// Handles chunks that arrive mid-line -- accumulates partial lines in a buffer
+// and only processes complete lines. Fixes messages not displaying when Render
+// sends SSE chunks that split a data: line across multiple read() calls.
+async function readStream(response, { onStatus, onAttached, onAutoCaptured, onText }) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    // Keep the last (potentially incomplete) line in the buffer
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.status) onStatus && onStatus(parsed.status);
+        else if (parsed.attached) onAttached && onAttached();
+        else if (parsed.autocaptured) onAutoCaptured && onAutoCaptured(parsed.autocaptured);
+        else if (parsed.text) onText && onText(parsed.text);
+      } catch {}
+    }
+  }
 }
 
 export default function ChatPage({ session, activeSessionId, setActiveSessionId, activeProject, setActiveProject, setView, activeModule, onMenuOpen }) {
@@ -306,31 +322,15 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
-
   useEffect(() => {
-    if (!activeSessionId) {
-      setMessages([]);
-      setSessionArchived(false);
-      return;
-    }
-    supabase
-      .from('messages')
-      .select('*')
-      .eq('session_id', activeSessionId)
-      .order('created_at')
+    if (!activeSessionId) { setMessages([]); setSessionArchived(false); return; }
+    supabase.from('messages').select('*').eq('session_id', activeSessionId).order('created_at')
       .then(({ data }) => { if (data) setMessages(data); });
-
-    supabase
-      .from('sessions')
-      .select('archived_at')
-      .eq('id', activeSessionId)
-      .single()
+    supabase.from('sessions').select('archived_at').eq('id', activeSessionId).single()
       .then(({ data }) => { setSessionArchived(!!data?.archived_at); });
   }, [activeSessionId]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -370,7 +370,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   const removeAttachment = () => setAttachedFile(null);
 
-  // Append transcript to existing input -- update DOM directly to avoid stale state
   const handleTranscript = (transcript) => {
     setInput(prev => prev ? prev + ' ' + transcript : transcript);
     setTimeout(() => textareaRef.current?.focus(), 50);
@@ -380,7 +379,6 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setInput(prompt);
     setTimeout(() => {
       textareaRef.current?.focus();
-      // Auto-send the injected prompt
       setInput('');
       const doSend = async () => {
         const text = prompt;
@@ -406,26 +404,17 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
               messages: msgPayload, mode, ruleOverrides: {}, formatControls: {},
             }),
           });
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value);
-            for (const line of chunk.split('\n').filter(l => l.startsWith('data: '))) {
-              const data = line.slice(6);
-              if (data === '[DONE]') break;
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.status) setStatusSteps(prev => [...prev, parsed.status]);
-                else if (parsed.text) {
-                  if (!hasStartedText) { hasStartedText = true; setMessages(prev => [...prev, { role: 'assistant', content: '' }]); }
-                  assistantText += parsed.text;
-                  setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
-                }
-              } catch {}
-            }
-          }
+          await readStream(response, {
+            onStatus: (s) => setStatusSteps(prev => [...prev, s]),
+            onText: (t) => {
+              if (!hasStartedText) {
+                hasStartedText = true;
+                setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+              }
+              assistantText += t;
+              setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
+            },
+          });
           await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
         } catch (err) { console.error(err); }
         setStreaming(false);
@@ -440,15 +429,12 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     if (!activeSessionId) return;
     try {
       await fetch(`${API}/api/sessions/${activeSessionId}/archive`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: session.user.id }),
       });
       setSessionArchived(true);
       setActiveSessionId(null);
-    } catch (err) {
-      console.error('Archive error:', err);
-    }
+    } catch (err) { console.error('Archive error:', err); }
   };
 
   const handleRestoreSession = async () => {
@@ -456,14 +442,11 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     if (!activeSessionId) return;
     try {
       await fetch(`${API}/api/sessions/${activeSessionId}/restore`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: session.user.id }),
       });
       setSessionArchived(false);
-    } catch (err) {
-      console.error('Restore error:', err);
-    }
+    } catch (err) { console.error('Restore error:', err); }
   };
 
   const downloadSession = async () => {
@@ -471,8 +454,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     setDownloading(true);
     try {
       const response = await fetch(API + '/api/generate-file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: activeSessionId, userId: session.user.id }),
       });
       if (!response.ok) throw new Error('Download failed');
@@ -483,9 +465,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       const disposition = response.headers.get('content-disposition');
       const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'session.docx';
       a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) { console.error(err); }
     setDownloading(false);
@@ -534,67 +514,45 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: session.user.id,
-            sessionId,
+            userId: session.user.id, sessionId,
             projectId: activeProject?.id || null,
             moduleId: activeModule?.id || null,
-            messages: msgPayload,
-            mode,
-            ruleOverrides: {},
-            formatControls: formatForThisSend,
+            messages: msgPayload, mode,
+            ruleOverrides: {}, formatControls: formatForThisSend,
           }),
         });
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split('\n').filter(l => l.startsWith('data: '))) {
-          const data = line.slice(6);
-          if (data === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.status) {
-              setStatusSteps(prev => [...prev, parsed.status]);
-            } else if (parsed.attached) {
-              // File confirmed received by backend
-            } else if (parsed.autocaptured) {
-              setAutoCaptured(parsed.autocaptured);
-              setTimeout(() => setAutoCaptured(null), 4000);
-            } else if (parsed.text) {
-              if (!hasStartedText) {
-                hasStartedText = true;
-                setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-              }
-              assistantText += parsed.text;
-              setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
-            }
-          } catch {}
-        }
-      }
+      await readStream(response, {
+        onStatus: (s) => setStatusSteps(prev => [...prev, s]),
+        onAttached: () => {},
+        onAutoCaptured: (note) => {
+          setAutoCaptured(note);
+          setTimeout(() => setAutoCaptured(null), 4000);
+        },
+        onText: (t) => {
+          if (!hasStartedText) {
+            hasStartedText = true;
+            setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+          }
+          assistantText += t;
+          setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: assistantText }]);
+        },
+      });
+
       await supabase.from('messages').insert({ role: 'assistant', content: assistantText, session_id: sessionId });
       const { data: allMsgs } = await supabase.from('messages')
         .select('*').eq('session_id', sessionId).order('created_at');
       if (allMsgs && allMsgs.length > 0 && allMsgs.length % 10 === 0) {
-        axios.post(API + '/api/summarise', {
-          userId: session.user.id, sessionId, messages: allMsgs
-        }).catch(console.error);
+        axios.post(API + '/api/summarise', { userId: session.user.id, sessionId, messages: allMsgs }).catch(console.error);
       }
       if (messages.length === 0) {
-        axios.post(API + '/api/generate-title', {
-          sessionId, userMessage: text, assistantMessage: assistantText
-        }).catch(console.error);
+        axios.post(API + '/api/generate-title', { sessionId, userMessage: text, assistantMessage: assistantText }).catch(console.error);
       }
     } catch (err) { console.error(err); }
 
     setStreaming(false);
-    setTimeout(() => {
-      setStatusVisible(false);
-      setTimeout(() => setStatusSteps([]), 400);
-    }, 2000);
+    setTimeout(() => { setStatusVisible(false); setTimeout(() => setStatusSteps([]), 400); }, 2000);
   };
 
   const OptionPill = ({ active, onClick, children }) => (
@@ -637,12 +595,10 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
           <div className='project-indicator'>Project: <span>{activeProject.name}</span></div>
         )}
         {setView && (
-          <button
-            onClick={() => setView('projects')}
+          <button onClick={() => setView('projects')}
             style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none',
               cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}
-            title='Back to projects'
-          >
+            title='Back to projects'>
             ‹ Projects
           </button>
         )}
@@ -656,25 +612,19 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
         )}
         {activeSessionId && messages.length > 0 && (
           <div style={{ marginLeft: autoCaptured ? 8 : 'auto', position: 'relative' }}>
-            <button
-              className='action-btn'
+            <button className='action-btn'
               style={{ fontSize: 18, padding: '2px 8px', letterSpacing: 2 }}
-              onClick={() => setSessionMenuOpen(prev => !prev)}
-              title='Session options'
-            >
+              onClick={() => setSessionMenuOpen(prev => !prev)} title='Session options'>
               ···
             </button>
             {sessionMenuOpen && (
-              <div
-                className='session-menu-dropdown'
+              <div className='session-menu-dropdown'
                 style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4 }}
-                onMouseLeave={() => setSessionMenuOpen(false)}
-              >
-                {sessionArchived ? (
-                  <button onClick={handleRestoreSession}>Restore session</button>
-                ) : (
-                  <button onClick={handleArchiveSession}>Archive session</button>
-                )}
+                onMouseLeave={() => setSessionMenuOpen(false)}>
+                {sessionArchived
+                  ? <button onClick={handleRestoreSession}>Restore session</button>
+                  : <button onClick={handleArchiveSession}>Archive session</button>
+                }
               </div>
             )}
           </div>
@@ -683,31 +633,23 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
       <div className='chat-area'>
         {sessionArchived && (
-          <div style={{
-            background: 'var(--surface)', border: '1px solid var(--border)',
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 'var(--radius)', padding: '8px 14px', marginBottom: 16,
             fontSize: 13, color: 'var(--text-secondary)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>This session is archived and read-only.</span>
             <button className='action-btn' onClick={handleRestoreSession}>Restore</button>
           </div>
         )}
         {messages.length === 0 && !streaming && !sessionArchived && (
           <EmptyState
-            activeProject={activeProject}
-            activeModule={activeModule}
-            onPromptClick={handlePromptClick}
-            userId={session.user.id}
-          />
+            activeProject={activeProject} activeModule={activeModule}
+            onPromptClick={handlePromptClick} userId={session.user.id} />
         )}
         {messages.map((msg, i) => (
           <Message key={i} message={msg} session={session}
-            sessionId={activeSessionId}
-            projectId={activeProject?.id || null}
-            isLast={i === messages.length - 1}
-            onPin={() => {}}
-            onInject={injectPrompt} />
+            sessionId={activeSessionId} projectId={activeProject?.id || null}
+            isLast={i === messages.length - 1} onPin={() => {}} onInject={injectPrompt} />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -736,8 +678,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                   </button>
                   {formatActiveCount > 0 && !formatOpen && (
                     <span style={{ fontSize: 10, color: 'var(--accent)' }}>
-                      {[formatControls.length, formatControls.format, formatControls.depth]
-                        .filter(Boolean).join(', ')}
+                      {[formatControls.length, formatControls.format, formatControls.depth].filter(Boolean).join(', ')}
                     </span>
                   )}
                   {formatActiveCount > 0 && (
@@ -749,8 +690,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                   )}
                 </div>
                 {formatOpen && (
-                  <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px',
-                    flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 12, padding: '6px 14px 8px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600,
                         textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Length</span>
@@ -791,21 +731,15 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                   </span>
                   <button onClick={removeAttachment}
                     style={{ background: 'none', border: 'none', cursor: 'pointer',
-                      fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
-                    ×
-                  </button>
+                      fontSize: 16, color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>×</button>
                 </div>
               )}
 
-              <textarea
-                ref={textareaRef}
-                className='input-textarea'
-                value={input}
+              <textarea ref={textareaRef} className='input-textarea' value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder='Ask AdvisoryHub... (Shift+Enter for new line)'
-                rows={1}
-              />
+                placeholder='Ask AdvisoryHub... (Shift+Enter for new line)' rows={1} />
+
               <div className='input-footer'>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <label title='Attach a document (PDF, DOCX, TXT)'
