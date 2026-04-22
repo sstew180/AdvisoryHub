@@ -30,9 +30,17 @@ router.post('/', async (req, res) => {
 
     // 3. Embed current query for semantic retrieval
     const userQuery = messages[messages.length - 1].content;
+
+    // Set SSE headers before any status messages
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    res.write(`data: ${JSON.stringify({ status: 'Thinking...' })}\n\n`);
     const queryEmbedding = await embed(userQuery);
 
     // 4. Retrieve relevant session memories
+    res.write(`data: ${JSON.stringify({ status: 'Searching memory...' })}\n\n`);
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding,
       match_user_id: userId,
@@ -42,6 +50,7 @@ router.post('/', async (req, res) => {
 
     // 5. Retrieve relevant library documents
     // Unified retrieval: global admin docs + user's own docs + active project docs
+    res.write(`data: ${JSON.stringify({ status: 'Reading library...' })}\n\n`);
     const { data: libraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding,
       match_threshold: 0.7,
@@ -50,14 +59,17 @@ router.post('/', async (req, res) => {
       p_project_id: projectId || null,
     });
 
+    if (libraryDocs && libraryDocs.length > 0) {
+      res.write(`data: ${JSON.stringify({ status: `Found ${libraryDocs.length} relevant document${libraryDocs.length !== 1 ? 's' : ''}` })}\n\n`);
+    }
+
     // 6. Assemble system prompt
     const isGuided = mode !== 'direct';
     let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
-    // 7. Call Claude with SSE streaming
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${JSON.stringify({ status: 'Drafting response...' })}\n\n`);
+
+    // 7. Call Claude with SSE streaming (headers already set above)
 
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
