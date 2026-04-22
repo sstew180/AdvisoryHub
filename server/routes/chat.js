@@ -36,11 +36,11 @@ router.post('/', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    res.write(`data: ${JSON.stringify({ status: 'Thinking...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Reading your question...' })}\n\n`);
     const queryEmbedding = await embed(userQuery);
 
     // 4. Retrieve relevant session memories
-    res.write(`data: ${JSON.stringify({ status: 'Searching memory...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Checking session memory...' })}\n\n`);
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding,
       match_user_id: userId,
@@ -48,9 +48,12 @@ router.post('/', async (req, res) => {
       match_count: 3,
     });
 
+    if (memories && memories.length > 0) {
+      res.write(`data: ${JSON.stringify({ status: `Found ${memories.length} relevant memor${memories.length !== 1 ? 'ies' : 'y'} from past sessions` })}\n\n`);
+    }
+
     // 5. Retrieve relevant library documents
-    // Unified retrieval: global admin docs + user's own docs + active project docs
-    res.write(`data: ${JSON.stringify({ status: 'Reading library...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Searching library...' })}\n\n`);
     const { data: libraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding,
       match_threshold: 0.7,
@@ -60,14 +63,33 @@ router.post('/', async (req, res) => {
     });
 
     if (libraryDocs && libraryDocs.length > 0) {
-      res.write(`data: ${JSON.stringify({ status: `Found ${libraryDocs.length} relevant document${libraryDocs.length !== 1 ? 's' : ''}` })}\n\n`);
+      // Report the most relevant docs by name
+      const docNames = libraryDocs.slice(0, 3).map(d => d.title).join(', ');
+      res.write(`data: ${JSON.stringify({ status: `Reading: ${docNames}${libraryDocs.length > 3 ? ` and ${libraryDocs.length - 3} more` : ''}` })}\n\n`);
     }
 
     // 6. Assemble system prompt
     const isGuided = mode !== 'direct';
-    let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
-    res.write(`data: ${JSON.stringify({ status: 'Drafting response...' })}\n\n`);
+    // Report profile context
+    if (profile) {
+      const profileParts = [];
+      if (profile.role) profileParts.push(profile.role);
+      if (profile.service_area) profileParts.push(profile.service_area);
+      if (profileParts.length > 0) {
+        res.write(`data: ${JSON.stringify({ status: `Applying your profile: ${profileParts.join(', ')}` })}\n\n`);
+      }
+    }
+
+    // Report project context
+    if (project) {
+      res.write(`data: ${JSON.stringify({ status: `Active project: ${project.name}` })}\n\n`);
+    }
+
+    // Report mode
+    res.write(`data: ${JSON.stringify({ status: isGuided ? 'Guided mode — applying communication preferences...' : 'Direct mode — drafting response...' })}\n\n`);
+
+    let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
     // 7. Call Claude with SSE streaming (headers already set above)
 
