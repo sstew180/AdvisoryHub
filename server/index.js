@@ -5,7 +5,10 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(cors({ 
+  origin: ['https://advisoryhub.rigour.app', 'http://localhost:5173'],
+  credentials: true 
+}));
 app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/chat', require('./routes/chat'));
