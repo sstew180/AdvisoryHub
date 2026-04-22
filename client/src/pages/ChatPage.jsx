@@ -347,7 +347,8 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
       module_id: activeModule?.id || null,
       title: null,
     }).select().single();
-    setActiveSessionId(data.id);
+    // Don't call setActiveSessionId here -- that triggers the messages useEffect
+    // which would wipe messages mid-stream. Set it after streaming completes in send().
     return data.id;
   };
 
@@ -552,6 +553,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     } catch (err) { console.error(err); }
 
     setStreaming(false);
+    setActiveSessionId(sessionId);
     setTimeout(() => { setStatusVisible(false); setTimeout(() => setStatusSteps([]), 400); }, 2000);
   };
 
