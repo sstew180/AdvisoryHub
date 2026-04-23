@@ -36,11 +36,11 @@ router.post('/', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    res.write(`data: ${JSON.stringify({ status: 'Reading your question...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Understanding your question...' })}\n\n`);
     const queryEmbedding = await embed(userQuery);
 
     // 4. Retrieve relevant session memories
-    res.write(`data: ${JSON.stringify({ status: 'Checking session memory...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Checking what we have covered in past sessions...' })}\n\n`);
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding,
       match_user_id: userId,
@@ -49,11 +49,13 @@ router.post('/', async (req, res) => {
     });
 
     if (memories && memories.length > 0) {
-      res.write(`data: ${JSON.stringify({ status: `Found ${memories.length} relevant memor${memories.length !== 1 ? 'ies' : 'y'} from past sessions` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ status: `Found ${memories.length} relevant lesson${memories.length !== 1 ? 's' : ''} from your past sessions` })}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({ status: 'No prior session context found — starting fresh' })}\n\n`);
     }
 
     // 5. Retrieve relevant library documents
-    res.write(`data: ${JSON.stringify({ status: 'Searching library...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Searching frameworks, legislation and skills library...' })}\n\n`);
     const { data: libraryDocs } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding,
       match_threshold: 0.7,
@@ -63,9 +65,24 @@ router.post('/', async (req, res) => {
     });
 
     if (libraryDocs && libraryDocs.length > 0) {
-      // Report the most relevant docs by name
-      const docNames = libraryDocs.slice(0, 3).map(d => d.title).join(', ');
-      res.write(`data: ${JSON.stringify({ status: `Reading: ${docNames}${libraryDocs.length > 3 ? ` and ${libraryDocs.length - 3} more` : ''}` })}\n\n`);
+      // Separate skills from other docs for more descriptive messaging
+      const skills = libraryDocs.filter(d => d.category === 'Skills');
+      const frameworks = libraryDocs.filter(d => d.category === 'Framework' || d.category === 'Best Practice' || d.category === 'Legislation');
+      const projectDocs = libraryDocs.filter(d => d.project_id);
+      const other = libraryDocs.filter(d => !skills.includes(d) && !frameworks.includes(d) && !projectDocs.includes(d));
+
+      if (skills.length > 0) {
+        res.write(`data: ${JSON.stringify({ status: `Applying skill${skills.length !== 1 ? 's' : ''}: ${skills.map(d => d.title).join(', ')}` })}\n\n`);
+      }
+      if (frameworks.length > 0) {
+        const names = frameworks.slice(0, 2).map(d => d.title).join(', ');
+        res.write(`data: ${JSON.stringify({ status: `Referencing: ${names}${frameworks.length > 2 ? ` and ${frameworks.length - 2} more` : ''}` })}\n\n`);
+      }
+      if (projectDocs.length > 0) {
+        res.write(`data: ${JSON.stringify({ status: `Reading ${projectDocs.length} project document${projectDocs.length !== 1 ? 's' : ''} from your active project` })}\n\n`);
+      }
+    } else {
+      res.write(`data: ${JSON.stringify({ status: 'No closely matched library documents found' })}\n\n`);
     }
 
     // 6. Assemble system prompt
@@ -77,17 +94,19 @@ router.post('/', async (req, res) => {
       if (profile.role) profileParts.push(profile.role);
       if (profile.service_area) profileParts.push(profile.service_area);
       if (profileParts.length > 0) {
-        res.write(`data: ${JSON.stringify({ status: `Applying your profile: ${profileParts.join(', ')}` })}\n\n`);
+        res.write(`data: ${JSON.stringify({ status: `Tailoring response for: ${profileParts.join(', ')}` })}\n\n`);
+      }
+      if (profile.preferences && isGuided) {
+        res.write(`data: ${JSON.stringify({ status: 'Applying your communication style preferences...' })}\n\n`);
       }
     }
 
     // Report project context
     if (project) {
-      res.write(`data: ${JSON.stringify({ status: `Active project: ${project.name}` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ status: `Applying project context: ${project.name}` })}\n\n`);
     }
 
-    // Report mode
-    res.write(`data: ${JSON.stringify({ status: isGuided ? 'Guided mode — applying communication preferences...' : 'Direct mode — drafting response...' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: 'Composing your response...' })}\n\n`);
 
     let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
