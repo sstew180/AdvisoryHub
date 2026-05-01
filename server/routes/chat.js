@@ -16,6 +16,32 @@ const {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// =============================================================================
+// Retrieval thresholds (Card #262, tiered retrieval)
+// =============================================================================
+// PROJECT documents are user-attached to the active project. Strong intent
+// signal, so the threshold is generous. Even a loosely-related project
+// document should surface so the model can weigh it.
+//
+// LIBRARY documents are general frameworks, legislation, and skills. Higher
+// threshold so general matches are precise and don't dilute the prompt.
+//
+// Tuning history:
+//   - 0.7  initial (matched original deployment guide default)
+//   - 0.4  Card #262 first pass (still missed valid project docs)
+//   - 0.3  Card #262 retune after smoke test of meta-action queries
+//          (e.g. "Write an ARC paper about the draft risk appetite statement"
+//          asks ABOUT a document rather than its content, so embeddings
+//          score lower than literal content questions)
+//
+// If too many irrelevant docs surface, raise PROJECT_THRESHOLD a notch.
+// =============================================================================
+
+const PROJECT_THRESHOLD = 0.3;
+const LIBRARY_THRESHOLD = 0.55;
+const PROJECT_MATCH_COUNT = 6;
+const LIBRARY_MATCH_COUNT = 8;
+
 router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode } = req.body;
 
@@ -64,32 +90,71 @@ router.post('/', async (req, res) => {
       res.write(`data: ${JSON.stringify({ status: 'No prior session context found, starting fresh' })}\n\n`);
     }
 
-    // 5. Retrieve relevant library documents
+    // 5. Tiered library retrieval
+    //    Pass A: project-scoped documents at lower threshold
+    //    Pass B: global library at moderate threshold
+    //    Merge and dedupe by id.
     res.write(`data: ${JSON.stringify({ status: 'Searching frameworks, legislation and skills library...' })}\n\n`);
-    const { data: libraryDocs } = await supabase.rpc('match_library', {
+
+    let projectScopedDocs = [];
+    if (projectId) {
+      const { data, error } = await supabase.rpc('match_library', {
+        query_embedding: queryEmbedding,
+        match_threshold: PROJECT_THRESHOLD,
+        match_count: PROJECT_MATCH_COUNT,
+        p_user_id: userId,
+        p_project_id: projectId,
+      });
+      if (error) {
+        console.error('Project-scoped retrieval error:', error);
+      } else {
+        // Keep only true project-scoped hits. The RPC also returns admin/global
+        // and user-personal docs which we want graded against the stricter
+        // library threshold instead.
+        projectScopedDocs = (data || []).filter(d => d.project_id === projectId);
+      }
+    }
+
+    const { data: libraryHits, error: libraryError } = await supabase.rpc('match_library', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.7,
-      match_count: 8,
+      match_threshold: LIBRARY_THRESHOLD,
+      match_count: LIBRARY_MATCH_COUNT,
       p_user_id: userId,
-      p_project_id: projectId || null,
+      p_project_id: null,
     });
+    if (libraryError) {
+      console.error('Library retrieval error:', libraryError);
+    }
 
-    if (libraryDocs && libraryDocs.length > 0) {
-      // Separate skills from other docs for more descriptive messaging
+    // Merge and deduplicate by id. Project hits come first so they take
+    // precedence in any iteration order downstream.
+    const seen = new Set();
+    const libraryDocs = [];
+    for (const d of [...(projectScopedDocs || []), ...(libraryHits || [])]) {
+      if (d && d.id && !seen.has(d.id)) {
+        seen.add(d.id);
+        libraryDocs.push(d);
+      }
+    }
+
+    if (libraryDocs.length > 0) {
       const skills = libraryDocs.filter(d => d.category === 'Skills');
-      const frameworks = libraryDocs.filter(d => d.category === 'Framework' || d.category === 'Best Practice' || d.category === 'Legislation');
+      const frameworks = libraryDocs.filter(d =>
+        d.category === 'Framework' ||
+        d.category === 'Best Practice' ||
+        d.category === 'Legislation'
+      );
       const projectDocs = libraryDocs.filter(d => d.project_id);
-      const other = libraryDocs.filter(d => !skills.includes(d) && !frameworks.includes(d) && !projectDocs.includes(d));
 
+      if (projectDocs.length > 0) {
+        res.write(`data: ${JSON.stringify({ status: `Reading ${projectDocs.length} project document${projectDocs.length !== 1 ? 's' : ''} from your active project` })}\n\n`);
+      }
       if (skills.length > 0) {
         res.write(`data: ${JSON.stringify({ status: `Applying skill${skills.length !== 1 ? 's' : ''}: ${skills.map(d => d.title).join(', ')}` })}\n\n`);
       }
       if (frameworks.length > 0) {
         const names = frameworks.slice(0, 2).map(d => d.title).join(', ');
         res.write(`data: ${JSON.stringify({ status: `Referencing: ${names}${frameworks.length > 2 ? ` and ${frameworks.length - 2} more` : ''}` })}\n\n`);
-      }
-      if (projectDocs.length > 0) {
-        res.write(`data: ${JSON.stringify({ status: `Reading ${projectDocs.length} project document${projectDocs.length !== 1 ? 's' : ''} from your active project` })}\n\n`);
       }
     } else {
       res.write(`data: ${JSON.stringify({ status: 'No closely matched library documents found' })}\n\n`);
@@ -98,7 +163,6 @@ router.post('/', async (req, res) => {
     // 6. Assemble system prompt
     const isGuided = mode !== 'direct';
 
-    // Report profile context
     if (profile) {
       const profileParts = [];
       if (profile.role) profileParts.push(profile.role);
@@ -115,7 +179,6 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Report project context
     if (project) {
       res.write(`data: ${JSON.stringify({ status: `Applying project context: ${project.name}` })}\n\n`);
       const overrideCount = project.preference_overrides
@@ -130,8 +193,7 @@ router.post('/', async (req, res) => {
 
     let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
-    // 7. Call Claude with SSE streaming (headers already set above)
-
+    // 7. Call Claude with SSE streaming
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
@@ -148,10 +210,10 @@ router.post('/', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
 
-} catch (err) {
+  } catch (err) {
     console.error(err);
     if (res.headersSent) {
-      // SSE stream already open: send error as an SSE event and close cleanly
+      // SSE stream already open. Send error as an SSE event and close cleanly.
       try {
         res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -160,7 +222,7 @@ router.post('/', async (req, res) => {
         console.error('Failed to write error to open SSE stream:', writeErr);
       }
     } else {
-      // Headers not yet sent: standard JSON 500 response
+      // Headers not yet sent. Standard JSON 500 response.
       res.status(500).json({ error: err.message });
     }
   }
@@ -197,7 +259,6 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     '2012, and Queensland Audit Office better practice guidelines. You cite your sources ' +
     'when drawing on retrieved documents.';
 
-  // Compute effective preferences once
   const prefs = effectivePreferences(profile, project);
 
   // 2. User identity and context (always)
