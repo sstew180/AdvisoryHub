@@ -353,16 +353,24 @@ export default function LibraryPage({ session, onMenuOpen, setView, activeProjec
 
       {/* Category tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
-        {CATS.map(c => (
-          <button key={c} onClick={() => handleFilterChange(c)}
-            style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent',
-              cursor: 'pointer', whiteSpace: 'nowrap',
-              borderBottom: filter === c ? '2px solid var(--accent)' : '2px solid transparent',
-              color: filter === c ? 'var(--accent)' : 'var(--text-secondary)',
-              fontWeight: filter === c ? 600 : 400, marginBottom: -1, transition: 'all 0.15s' }}>
-            {c}
-          </button>
-        ))}
+        {CATS.map(c => {
+          const count = (() => {
+            if (c === 'All') return docs.length;
+            if (c === 'Project') return activeProject ? docs.filter(d => d.project_id === activeProject.id).length : 0;
+            if (c === 'My Documents') return docs.filter(d => d.user_id === session.user.id && !d.project_id).length;
+            return docs.filter(d => d.category === c && !d.user_id).length;
+          })();
+          return (
+            <button key={c} onClick={() => handleFilterChange(c)}
+              style={{ padding: '8px 14px', fontSize: 13, border: 'none', background: 'transparent',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+                borderBottom: filter === c ? '2px solid var(--accent)' : '2px solid transparent',
+                color: filter === c ? 'var(--accent)' : 'var(--text-secondary)',
+                fontWeight: filter === c ? 600 : 400, marginBottom: -1, transition: 'all 0.15s' }}>
+              {c}{count > 0 ? <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.7 }}>({count})</span> : null}
+            </button>
+          );
+        })}
       </div>
 
       {/* Upload panel -- shown for Project and My Documents tabs */}
