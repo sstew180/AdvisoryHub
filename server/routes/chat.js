@@ -3,6 +3,16 @@ const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
+const {
+  effectivePreferences,
+  buildIdentityBlock,
+  buildHardConstraintsBlock,
+  buildWorkingStyleBlock,
+  buildVoiceMarkersBlock,
+  buildQualityBlock,
+  buildLegacyPreferencesBlock,
+  describeConfigurationSource
+} = require('../lib/prompts/preferenceMap');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -51,7 +61,7 @@ router.post('/', async (req, res) => {
     if (memories && memories.length > 0) {
       res.write(`data: ${JSON.stringify({ status: `Found ${memories.length} relevant lesson${memories.length !== 1 ? 's' : ''} from your past sessions` })}\n\n`);
     } else {
-      res.write(`data: ${JSON.stringify({ status: 'No prior session context found — starting fresh' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ status: 'No prior session context found, starting fresh' })}\n\n`);
     }
 
     // 5. Retrieve relevant library documents
@@ -96,14 +106,24 @@ router.post('/', async (req, res) => {
       if (profileParts.length > 0) {
         res.write(`data: ${JSON.stringify({ status: `Tailoring response for: ${profileParts.join(', ')}` })}\n\n`);
       }
-      if (profile.preferences && isGuided) {
-        res.write(`data: ${JSON.stringify({ status: 'Applying your communication style preferences...' })}\n\n`);
+
+      if (isGuided) {
+        const configSource = describeConfigurationSource(profile);
+        if (configSource) {
+          res.write(`data: ${JSON.stringify({ status: `Applying your ${configSource}...` })}\n\n`);
+        }
       }
     }
 
     // Report project context
     if (project) {
       res.write(`data: ${JSON.stringify({ status: `Applying project context: ${project.name}` })}\n\n`);
+      const overrideCount = project.preference_overrides
+        ? Object.keys(project.preference_overrides).length
+        : 0;
+      if (overrideCount > 0 && isGuided) {
+        res.write(`data: ${JSON.stringify({ status: `Applying ${overrideCount} project-level preference override${overrideCount !== 1 ? 's' : ''}` })}\n\n`);
+      }
     }
 
     res.write(`data: ${JSON.stringify({ status: 'Composing your response...' })}\n\n`);
@@ -134,25 +154,65 @@ router.post('/', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
-  let prompt = 'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
-    'officers in Queensland, Australia. You specialise in Risk, Audit, and Insurance. ' +
-    'You provide expert guidance drawing on best practice frameworks, Queensland legislation, ' +
-    'and the Queensland Audit Office guidelines. You cite your sources when drawing on ' +
-    'retrieved documents. You write clearly and professionally.';
+// =============================================================================
+// buildSystemPrompt
+// Assembly order matches v1.0 spec Section 3.4 and is unchanged in v2.0.
+//
+//   1. Core identity statement (sector pack)
+//   2. User identity and context
+//   3. Hard constraints (banned words, redactions, language) - always
+//   4. Working style (Guided mode only)
+//   5. Voice and language markers (Guided mode only, typically Phase 2+)
+//   6. Quality requirements (high scrutiny, self audit) - always
+//   7. Legacy free-form preferences - backward compatibility
+//   8. Project context
+//   9. Retrieved session memories
+//  10. Retrieved framework, library, and project documents
+//
+// Project preference_overrides are merged on top of profile preferences
+// before any block builder runs, via effectivePreferences().
+// =============================================================================
 
-  // User profile context
-  if (profile) {
-    prompt += `\n\n## User Profile`;
-    if (profile.role) prompt += `\nRole: ${profile.role}`;
-    if (profile.service_area) prompt += `\nService Area: ${profile.service_area}`;
-    if (profile.goals) prompt += `\nCurrent Objectives: ${profile.goals}`;
-    if (profile.preferences && isGuided) prompt += `\nCommunication Style: ${profile.preferences}`;
-    if (profile.artefact_preference) prompt += `\nDefault Output Format: ${profile.artefact_preference}`;
-    if (profile.high_scrutiny) prompt += `\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.`;
+function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
+
+  // 1. Core identity statement
+  let prompt =
+    'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
+    'officers in Queensland, Australia. You specialise in Risk and Audit, Contract ' +
+    'Management, and General advisory across procurement, governance, and operations. ' +
+    'You provide expert guidance drawing on best practice frameworks, Queensland ' +
+    'legislation including the Local Government Act 2009 and Local Government Regulation ' +
+    '2012, and Queensland Audit Office better practice guidelines. You cite your sources ' +
+    'when drawing on retrieved documents.';
+
+  // Compute effective preferences once
+  const prefs = effectivePreferences(profile, project);
+
+  // 2. User identity and context (always)
+  prompt += buildIdentityBlock(prefs);
+
+  // 3. Hard constraints (always)
+  prompt += buildHardConstraintsBlock(prefs);
+
+  // 4. Working style (Guided only)
+  if (isGuided) {
+    prompt += buildWorkingStyleBlock(prefs);
   }
 
-  // Project context
+  // 5. Voice and language markers (Guided only)
+  if (isGuided) {
+    prompt += buildVoiceMarkersBlock(prefs);
+  }
+
+  // 6. Quality requirements (always)
+  prompt += buildQualityBlock(prefs);
+
+  // 7. Legacy free-form preferences (backward compat, Guided only)
+  if (isGuided) {
+    prompt += buildLegacyPreferencesBlock(prefs);
+  }
+
+  // 8. Project context
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
     if (project.description) prompt += `\n${project.description}`;
@@ -160,13 +220,13 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     if (project.custom_instructions) prompt += `\nProject Instructions: ${project.custom_instructions}`;
   }
 
-  // Session memories
+  // 9. Retrieved session memories
   if (memories && memories.length > 0) {
     prompt += `\n\n## Relevant Past Context`;
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
   }
 
-  // Library documents -- now includes user docs and project docs
+  // 10. Retrieved framework, library, and project documents
   if (libraryDocs && libraryDocs.length > 0) {
     prompt += `\n\n## Relevant Frameworks, Guidance and Project Documents`;
     libraryDocs.forEach(d => {
