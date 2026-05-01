@@ -148,9 +148,21 @@ router.post('/', async (req, res) => {
     res.write('data: [DONE]\n\n');
     res.end();
 
-  } catch (err) {
+} catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    if (res.headersSent) {
+      // SSE stream already open: send error as an SSE event and close cleanly
+      try {
+        res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } catch (writeErr) {
+        console.error('Failed to write error to open SSE stream:', writeErr);
+      }
+    } else {
+      // Headers not yet sent: standard JSON 500 response
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
