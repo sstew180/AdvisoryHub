@@ -106,7 +106,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       content: content.slice(0, 50000),
       embedding,
       is_admin_managed: isAdmin,
-      default_enabled: isAdmin, // user docs default to enabled but not "default_enabled" globally
+      // default_enabled controls whether the doc is included in RAG retrieval by default
+      // for users who can see it. Visibility itself is scoped by user_id / project_id in
+      // the GET filter above. All uploads land enabled; per-user opt-out via
+      // user_library_settings. Card #314: was previously `isAdmin` which left user and
+      // project uploads disabled by default.
+      default_enabled: true,
     };
 
     // Attach user_id for user uploads
