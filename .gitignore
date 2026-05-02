@@ -5,3 +5,4 @@ dist
 echo server\.env >> ..\.gitignore
 .vercel
 .env*.local
+*.bak
