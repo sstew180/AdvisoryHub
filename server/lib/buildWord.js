@@ -1,16 +1,16 @@
 // =============================================================================
 // server/lib/buildWord.js
 //
-// Builds a Microsoft Word (.docx) buffer from structured input supplied by
-// Claude via the create_word_document tool call.
+// Top-level Word document builder. Dispatches between two paths:
 //
-// Visual style intentionally matches server/routes/generateFile.js (the
-// session transcript export) so AI-authored documents and transcript exports
-// feel like they belong to the same product.
+//   1. Template-driven: use a prepared template (e.g. Gold Coast briefing
+//      note) via docxtemplater. Preserves branding, fonts, headers, footers.
+//      Implementation in buildWordFromTemplate.js.
 //
-// Stage 1 scope: title, optional subtitle, organisation+date strip, section
-// headings (3 levels), body paragraphs, bullet lists, footer. No tables, no
-// inline rich text, no styling overrides. Tables come in a follow-on card.
+//   2. From-scratch: build a generic AdvisoryHub-styled document via docx-js.
+//      Used when no template is requested. Useful for ad-hoc documents.
+//
+// The dispatch decision is made by the `template` field in the tool input.
 // =============================================================================
 
 const {
@@ -21,34 +21,36 @@ const {
   HeadingLevel,
   AlignmentType,
 } = require('docx');
+const { buildBriefingNote, TEMPLATES } = require('./buildWordFromTemplate');
 
 /**
- * @typedef {object} WordSection
- * @property {string}   heading         Section heading text.
- * @property {1|2|3}    level           Heading level. 2 by default.
- * @property {string[]} [paragraphs]    Plain text body paragraphs.
- * @property {string[]} [bullets]       Plain text bullet list.
- */
-
-/**
- * @typedef {object} WordInput
- * @property {string}        title         Document title.
- * @property {string}        [subtitle]    Optional subtitle.
- * @property {string}        [organisation] Optional organisation name shown in header.
- * @property {WordSection[]} sections      Document body, organised into sections.
- */
-
-/**
- * Build a Word document buffer from structured input.
+ * Top-level builder. Routes to template-based or scratch implementation
+ * depending on input.template.
  *
- * Defensively coerces input. If the tool call has missing or malformed
- * fields, the build still produces a sensible document rather than throwing.
- *
- * @param {WordInput} input
+ * @param {object} input    Tool input from create_word_document.
  * @returns {Promise<Buffer>}
  */
 async function buildWordDocument(input) {
-  const safeInput = normaliseInput(input);
+  const templateName = input && typeof input.template === 'string' ? input.template : null;
+
+  if (templateName === 'briefing_note') {
+    return buildBriefingNote(input);
+  }
+
+  // Unknown template name: fall back to scratch build but log a warning.
+  if (templateName && !(templateName in TEMPLATES)) {
+    console.warn(`buildWordDocument: unknown template '${templateName}', using scratch build`);
+  }
+
+  return buildScratchDocument(input);
+}
+
+// -----------------------------------------------------------------------------
+// Scratch builder (no template) -- AdvisoryHub-styled generic document.
+// -----------------------------------------------------------------------------
+
+async function buildScratchDocument(input) {
+  const safeInput = normaliseScratchInput(input);
 
   const date = new Date().toLocaleDateString('en-AU', {
     day: 'numeric',
@@ -163,10 +165,6 @@ async function buildWordDocument(input) {
 
 /**
  * Sanitise + truncate a title into a filesystem-safe filename.
- * Pattern matches server/routes/generateFile.js for consistency.
- *
- * @param {string} title
- * @returns {string} filename ending in .docx
  */
 function safeFilename(title) {
   const base = (title || 'document')
@@ -175,17 +173,16 @@ function safeFilename(title) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 50) || 'document';
-  // Append a short timestamp so retries don't collide. Easier than
-  // generating UUIDs and still readable.
   const stamp = Date.now().toString(36);
   return `${base}-${stamp}.docx`;
 }
 
 // -----------------------------------------------------------------------------
-// Defensive input coercion. Claude's tool calls are usually well-formed, but
-// one missing field shouldn't crash the build.
+// Defensive input coercion for the scratch path.
+// (The template path has its own coercion in buildWordFromTemplate.js.)
 // -----------------------------------------------------------------------------
-function normaliseInput(raw) {
+
+function normaliseScratchInput(raw) {
   const input = raw && typeof raw === 'object' ? raw : {};
   const title = typeof input.title === 'string' && input.title.trim()
     ? input.title.trim()
@@ -196,8 +193,6 @@ function normaliseInput(raw) {
   const rawSections = Array.isArray(input.sections) ? input.sections : [];
   const sections = rawSections.map(normaliseSection).filter(s => s !== null);
 
-  // If the AI somehow produced a doc with no usable sections, give it one
-  // empty placeholder so the file still opens cleanly.
   if (sections.length === 0) {
     sections.push({
       heading: 'Content',
@@ -226,7 +221,6 @@ function normaliseSection(raw) {
         .map(b => b.trim())
     : [];
 
-  // A section with no heading and no body is meaningless. Drop it.
   if (!heading && paragraphs.length === 0 && bullets.length === 0) return null;
 
   return { heading, level, paragraphs, bullets };

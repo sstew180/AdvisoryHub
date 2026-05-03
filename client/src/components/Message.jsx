@@ -12,6 +12,87 @@ const SCRUTINY_ROLES = [
   { id: 'councillor', label: 'Elected member', prompt: 'You just read the previous response. What would an elected council member question or find unclear when this lands on their desk? Be specific and direct. No preamble.' },
 ];
 
+// Extensions that should render as a file card instead of a plain link.
+const FILE_EXT_RE = /\.(docx|xlsx|pptx|pdf)([?#]|$)/i;
+
+// File icon background colours per extension. Word is teal to match accent.
+const FILE_TYPE_STYLES = {
+  docx: { label: 'DOCX', color: '#ffffff', bg: '#0091a4' },
+  xlsx: { label: 'XLSX', color: '#ffffff', bg: '#1d6f42' },
+  pptx: { label: 'PPTX', color: '#ffffff', bg: '#d24726' },
+  pdf:  { label: 'PDF',  color: '#ffffff', bg: '#b30b00' },
+};
+
+function getFileType(href) {
+  const m = href && href.match(/\.(docx|xlsx|pptx|pdf)/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Minimal file card. Click anywhere on it to download.
+// Renders inline within the assistant message body, replacing the plain
+// Markdown link that Claude included.
+function FileCard({ href, filename }) {
+  const fileType = getFileType(href);
+  const style = FILE_TYPE_STYLES[fileType] || FILE_TYPE_STYLES.docx;
+
+  return (
+    <a
+      href={href}
+      target='_blank'
+      rel='noopener noreferrer'
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '10px 14px',
+        margin: '8px 0',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        background: 'var(--bg)',
+        textDecoration: 'none',
+        color: 'var(--text-primary)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        transition: 'all 0.15s',
+        maxWidth: '100%',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'var(--accent)';
+        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,145,164,0.12)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'var(--border)';
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
+      }}
+    >
+      <div style={{
+        width: 36, height: 44, flexShrink: 0,
+        background: style.bg, color: style.color,
+        borderRadius: 4,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 700, letterSpacing: '0.5px',
+      }}>
+        {style.label}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 500, color: 'var(--text-primary)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {filename}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          Click to download
+        </div>
+      </div>
+      <div style={{
+        fontSize: 12, color: 'var(--accent)', fontWeight: 500, flexShrink: 0,
+      }}>
+        ↓
+      </div>
+    </a>
+  );
+}
+
 export default function Message({ message, session, sessionId, projectId, onPin, isLast, onInject }) {
   const isAssistant = message.role === 'assistant';
   const [pinned, setPinned] = useState(false);
@@ -51,18 +132,38 @@ export default function Message({ message, session, sessionId, projectId, onPin,
     );
   };
 
-
-
   const scrutinise = (role) => {
     setScrutinyOpen(false);
     onInject && onInject(role.prompt);
+  };
+
+  // Custom Markdown renderer for links: file extensions get the FileCard UI;
+  // everything else stays as a plain link.
+  const markdownComponents = {
+    a: ({ href, children, ...props }) => {
+      if (href && FILE_EXT_RE.test(href)) {
+        const filename = typeof children === 'string'
+          ? children
+          : Array.isArray(children) && typeof children[0] === 'string'
+            ? children[0]
+            : 'Document';
+        return <FileCard href={href} filename={filename} />;
+      }
+      return (
+        <a href={href} target='_blank' rel='noopener noreferrer' {...props}>
+          {children}
+        </a>
+      );
+    },
   };
 
   return (
     <div className={'message ' + message.role}>
       <div className='message-role'>{isAssistant ? 'AdvisoryHub' : 'You'}</div>
       <div className='message-content'>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {message.content}
+        </ReactMarkdown>
       </div>
       <div className='message-actions'>
         <button className='action-btn' onClick={copy}>Copy</button>

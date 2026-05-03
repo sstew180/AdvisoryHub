@@ -21,23 +21,6 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // =============================================================================
 // Retrieval thresholds (Card #262, tiered retrieval)
 // =============================================================================
-// PROJECT documents are user-attached to the active project. Strong intent
-// signal, so the threshold is generous. Even a loosely-related project
-// document should surface so the model can weigh it.
-//
-// LIBRARY documents are general frameworks, legislation, and skills. Higher
-// threshold so general matches are precise and don't dilute the prompt.
-//
-// Tuning history:
-//   - 0.7  initial (matched original deployment guide default)
-//   - 0.4  Card #262 first pass (still missed valid project docs)
-//   - 0.3  Card #262 retune after smoke test of meta-action queries
-//          (e.g. "Write an ARC paper about the draft risk appetite statement"
-//          asks ABOUT a document rather than its content, so embeddings
-//          score lower than literal content questions)
-//
-// If too many irrelevant docs surface, raise PROJECT_THRESHOLD a notch.
-// =============================================================================
 
 const PROJECT_THRESHOLD = 0.3;
 const LIBRARY_THRESHOLD = 0.55;
@@ -47,13 +30,10 @@ const LIBRARY_MATCH_COUNT = 8;
 // =============================================================================
 // Tool definitions (FEAT-WORD)
 // =============================================================================
-// AI-authored Word documents. Stage 1 covers Word only. Excel, PowerPoint,
-// and PDF are deferred to follow-on cards.
-//
-// The tool description deliberately frames WHEN to use vs WHEN NOT to. The
-// model decides based on user intent, so the description carries that signal.
-// The system prompt also reminds the model of this capability (see
-// buildSystemPrompt below).
+// Stage 1: scratch Word documents.
+// Stage 2: optional template parameter for branded document templates.
+//   - 'briefing_note' uses the Gold Coast briefing note template (logo,
+//     metadata table, Heading2 styling, footer, page numbers).
 // =============================================================================
 
 const TOOLS = [
@@ -69,9 +49,21 @@ const TOOLS = [
       'casual discussion, or content that fits naturally as a chat response. ' +
       'When the request is ambiguous (could be either a chat response or a ' +
       'document), briefly ask the user which they prefer before calling ' +
-      'the tool. After the tool runs you will receive the download URL and ' +
-      'must include it in your response to the user as a Markdown link so ' +
-      'they can download the document.',
+      'the tool. ' +
+      '\n\n' +
+      'TEMPLATES: When the user asks for a briefing note and works for the ' +
+      'City of Gold Coast (or has not specified a different organisation), ' +
+      'use template="briefing_note". This produces a properly branded Gold ' +
+      'Coast briefing note with logo and standard metadata fields. Before ' +
+      'calling the tool with a template, ASK the user for any metadata you ' +
+      'do not know: To (recipient), From (author), Copy, Action by, File no. ' +
+      'You may default Subject to the document title and Date to today. ' +
+      'It is acceptable to leave optional fields blank if the user has not ' +
+      'provided them and does not want to be asked again. ' +
+      '\n\n' +
+      'After the tool runs you will receive the download URL and must include ' +
+      'it in your response to the user as a Markdown link so they can ' +
+      'download the document.',
     input_schema: {
       type: 'object',
       properties: {
@@ -79,29 +71,83 @@ const TOOLS = [
           type: 'string',
           description:
             'The document title. Should be specific and descriptive, e.g. ' +
-            '"Briefing Note: Procurement Threshold Review" rather than just ' +
-            '"Briefing Note".',
+            '"Procurement Threshold Review for FY2026" rather than just ' +
+            '"Briefing Note". For briefing notes this becomes the Subject ' +
+            'field unless metadata.subject is provided separately.',
+        },
+        template: {
+          type: 'string',
+          enum: ['briefing_note'],
+          description:
+            'Optional template name. When set, the document is rendered into ' +
+            'the named branded template. ' +
+            'Use "briefing_note" for City of Gold Coast briefing notes; this ' +
+            'is the recommended default when a Gold Coast user asks for a ' +
+            'briefing note. Omit this field to produce a generic AdvisoryHub-' +
+            'styled document from scratch.',
+        },
+        metadata: {
+          type: 'object',
+          description:
+            'Document metadata fields. Required when template="briefing_note": ' +
+            'supply To, From, Subject, Date as a minimum. Copy, Action by, ' +
+            'and File no are optional but supply them when known. Ask the ' +
+            'user for missing required fields before calling the tool.',
+          properties: {
+            to: {
+              type: 'string',
+              description: 'Primary recipient. e.g. "Director, Corporate Governance".',
+            },
+            copy: {
+              type: 'string',
+              description: 'Carbon copy recipients. Optional.',
+            },
+            from: {
+              type: 'string',
+              description: 'Author. Use the user\'s name and role from their profile, ' +
+                'e.g. "Scott Stewart, Manager Risk and Insurance".',
+            },
+            action_by: {
+              type: 'string',
+              description: 'Person responsible for action, or action deadline. ' +
+                'e.g. "15 May 2026" or "CFO by 15 May 2026". Optional.',
+            },
+            subject: {
+              type: 'string',
+              description: 'Subject line. Defaults to the document title if omitted.',
+            },
+            date: {
+              type: 'string',
+              description: 'Document date. Defaults to today\'s date if omitted. ' +
+                'Format as a natural date, e.g. "3 May 2026".',
+            },
+            file_no: {
+              type: 'string',
+              description: 'Council file reference number. Ask the user; do not ' +
+                'invent. Optional - leave blank if not provided.',
+            },
+          },
         },
         subtitle: {
           type: 'string',
           description:
-            'Optional subtitle, often used for the document type or audience, ' +
-            'e.g. "Prepared for the Audit and Risk Committee".',
+            'Optional subtitle. Used by the scratch builder (no template). ' +
+            'Ignored when a template is in use; use metadata.subject instead.',
         },
         organisation: {
           type: 'string',
           description:
-            'Optional organisation name to display in the document header. ' +
-            'If the user has indicated their organisation (e.g. City of Gold ' +
-            'Coast), use that. Otherwise omit.',
+            'Optional organisation name. Used by the scratch builder. ' +
+            'Ignored when a template is in use (templates have their own branding).',
         },
         sections: {
           type: 'array',
           description:
             'The body of the document, organised into sections. Each section ' +
             'has a heading and content (paragraphs and/or bullets). Order ' +
-            'sections logically: typically Background or Context first, then ' +
-            'Analysis or Discussion, then Recommendations or Next Steps.',
+            'sections logically. For a briefing note, a typical structure is ' +
+            'Purpose, Background, Discussion, Risks, Recommendation, Next Steps - ' +
+            'omit sections that aren\'t relevant.',
           items: {
             type: 'object',
             properties: {
@@ -113,16 +159,14 @@ const TOOLS = [
                 type: 'integer',
                 enum: [1, 2, 3],
                 description:
-                  'Heading level: 1 for major section, 2 for sub-section, ' +
-                  '3 for detail. Use 2 by default. Only use 1 sparingly for ' +
-                  'top-level divisions of a long document.',
+                  'Heading level. 2 by default. Used only by the scratch ' +
+                  'builder; templates apply their own consistent heading style.',
               },
               paragraphs: {
                 type: 'array',
                 description:
                   'Body paragraphs for this section. Plain text. Do not use ' +
-                  'markdown syntax (no **bold**, no _italics_, no # headings). ' +
-                  'For bullet lists, use the bullets field instead.',
+                  'markdown syntax. For bullet lists, use the bullets field.',
                 items: { type: 'string' },
               },
               bullets: {
@@ -133,7 +177,7 @@ const TOOLS = [
                 items: { type: 'string' },
               },
             },
-            required: ['heading', 'level'],
+            required: ['heading'],
           },
         },
       },
@@ -169,14 +213,13 @@ function displayName(profile) {
 // Tool execution
 // =============================================================================
 
-/**
- * Execute the create_word_document tool. Builds the docx, uploads to Supabase
- * Storage, and returns a tool-result payload that includes the signed URL
- * plus instructions for Claude on how to surface it to the user.
- */
 async function executeCreateWordDocument(input, { userId, sessionId, res }) {
   const title = (input && input.title) || 'document';
-  emitStatus(res, `Creating Word document: ${title}`);
+  const usingTemplate = input && typeof input.template === 'string';
+  const templateLabel = usingTemplate
+    ? `${input.template.replace(/_/g, ' ')} template`
+    : 'Word document';
+  emitStatus(res, `Creating ${templateLabel}: ${title}`);
 
   const buffer = await buildWordDocument(input);
   const filename = safeFilename(title);
@@ -185,9 +228,6 @@ async function executeCreateWordDocument(input, { userId, sessionId, res }) {
 
   emitStatus(res, `Document ready: ${filename}`);
 
-  // Tool result: instruct Claude to surface the link in its reply. We
-  // explicitly ask for a Markdown link because the frontend renders Markdown
-  // and that gives the user a clickable download link inline in the chat.
   return (
     `Document created successfully.\n\n` +
     `Title: ${title}\n` +
@@ -200,14 +240,6 @@ async function executeCreateWordDocument(input, { userId, sessionId, res }) {
     `document itself contains the substantive content.`
   );
 }
-
-// =============================================================================
-// Streaming tool-use loop
-// =============================================================================
-// Pattern: stream Claude's response. If stop_reason is tool_use, run the
-// requested tools, append assistant message + tool results to the message
-// history, and stream the next round. Cap rounds to avoid runaway loops.
-// =============================================================================
 
 const TOOL_HANDLERS = {
   create_word_document: executeCreateWordDocument,
@@ -222,9 +254,6 @@ async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
       messages: currentMessages,
     });
 
-    // Stream text deltas to the client as they arrive. Other event types
-    // (tool_use deltas etc.) are buffered by the SDK and surfaced via
-    // finalMessage(); we don't need to handle them here.
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
         res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
@@ -233,7 +262,6 @@ async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
 
     const finalMessage = await stream.finalMessage();
 
-    // No tool call: we're done.
     if (finalMessage.stop_reason !== 'tool_use') {
       return;
     }
@@ -243,7 +271,6 @@ async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
       return;
     }
 
-    // Execute every tool the model invoked in this turn.
     const toolResults = [];
     for (const toolUse of toolUseBlocks) {
       const handler = TOOL_HANDLERS[toolUse.name];
@@ -267,8 +294,6 @@ async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
       }
     }
 
-    // Append the assistant turn (which contains the tool_use blocks) and the
-    // tool results, then loop.
     currentMessages = [
       ...currentMessages,
       { role: 'assistant', content: finalMessage.content },
@@ -276,8 +301,6 @@ async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
     ];
   }
 
-  // Exhausted rounds. Tell the user something went wrong rather than
-  // silently truncate.
   res.write(
     `data: ${JSON.stringify({
       text: '\n\n(I hit the maximum number of tool rounds. The document above is what was produced.)',
@@ -293,14 +316,12 @@ router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode } = req.body;
 
   try {
-    // 1. Fetch user profile
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single();
 
-    // 2. Fetch project context (if active)
     let project = null;
     if (projectId) {
       const { data } = await supabase
@@ -311,10 +332,8 @@ router.post('/', async (req, res) => {
       project = data;
     }
 
-    // 3. Embed current query for semantic retrieval
     const userQuery = messages[messages.length - 1].content;
 
-    // Set SSE headers before any status messages
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -322,7 +341,6 @@ router.post('/', async (req, res) => {
     emitStatus(res, 'Reading your question...');
     const queryEmbedding = await embed(userQuery);
 
-    // 4. Retrieve relevant session memories
     emitStatus(res, 'Checking what we have discussed before...');
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding,
@@ -338,7 +356,6 @@ router.post('/', async (req, res) => {
       );
     }
 
-    // 5. Tiered library retrieval
     emitStatus(res, 'Searching the library...');
 
     let projectScopedDocs = [];
@@ -400,7 +417,6 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 6. Personalisation status
     const isGuided = mode !== 'direct';
 
     if (profile) {
@@ -440,12 +456,8 @@ router.post('/', async (req, res) => {
 
     const systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
-    // 7. Stream Claude with tool support
     await streamWithTools({
       baseParams: {
-        // Bumped from 2048 to 8192 because document tool calls can produce
-        // long structured input (briefing notes, board papers). 8192 leaves
-        // ample room while staying well under model limits.
         model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         system: systemPrompt,
@@ -477,27 +489,10 @@ router.post('/', async (req, res) => {
 
 // =============================================================================
 // buildSystemPrompt
-// Assembly order matches v1.0 spec Section 3.4 and is unchanged in v2.0.
-//
-//   1.   Core identity statement (sector pack)
-//   1.5  Document creation capability (FEAT-WORD)
-//   2.   User identity and context
-//   3.   Hard constraints (banned words, redactions, language) - always
-//   4.   Working style (Guided mode only)
-//   5.   Voice and language markers (Guided mode only, typically Phase 2+)
-//   6.   Quality requirements (high scrutiny, self audit) - always
-//   7.   Legacy free-form preferences - backward compatibility
-//   8.   Project context
-//   9.   Retrieved session memories
-//  10.   Retrieved framework, library, and project documents
-//
-// Project preference_overrides are merged on top of profile preferences
-// before any block builder runs, via effectivePreferences().
 // =============================================================================
 
 function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
 
-  // 1. Core identity statement
   let prompt =
     'You are AdvisoryHub, an AI-powered advisory assistant for local government ' +
     'officers in Queensland, Australia. You specialise in Risk and Audit, Contract ' +
@@ -507,7 +502,7 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     '2012, and Queensland Audit Office better practice guidelines. You cite your sources ' +
     'when drawing on retrieved documents.';
 
-  // 1.5 Document creation capability
+  // Document creation capability and template-aware behaviour
   prompt +=
     '\n\n## Document Creation\n' +
     'You can create downloadable Microsoft Word documents using the ' +
@@ -519,35 +514,39 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     'before calling the tool. Do not use the tool for short answers, ' +
     'explanations, or casual discussion. After the tool runs you will ' +
     'receive a download URL which you must surface to the user as a ' +
-    'Markdown link in your reply.';
+    'Markdown link in your reply.\n\n' +
+    '### Templates\n' +
+    'For Gold Coast briefing notes, set template="briefing_note" in the ' +
+    'tool call. This applies the official Gold Coast template (logo, ' +
+    'metadata table, standard fonts and footer). Before calling the tool ' +
+    'with this template, ask the user for the metadata fields you do not ' +
+    'know:\n' +
+    '- To (recipient): required\n' +
+    '- From (author): default to the user\'s name and role from their profile\n' +
+    '- Copy: optional\n' +
+    '- Action by: optional\n' +
+    '- File no: optional, ask if relevant\n' +
+    '- Subject: defaults to document title\n' +
+    '- Date: defaults to today\n' +
+    'Do not invent values for these fields. Ask the user, accept that the ' +
+    'user may want to leave some blank, then proceed.';
 
   const prefs = effectivePreferences(profile, project);
 
-  // 2. User identity and context (always)
   prompt += buildIdentityBlock(prefs);
-
-  // 3. Hard constraints (always)
   prompt += buildHardConstraintsBlock(prefs);
 
-  // 4. Working style (Guided only)
   if (isGuided) {
     prompt += buildWorkingStyleBlock(prefs);
-  }
-
-  // 5. Voice and language markers (Guided only)
-  if (isGuided) {
     prompt += buildVoiceMarkersBlock(prefs);
   }
 
-  // 6. Quality requirements (always)
   prompt += buildQualityBlock(prefs);
 
-  // 7. Legacy free-form preferences (backward compat, Guided only)
   if (isGuided) {
     prompt += buildLegacyPreferencesBlock(prefs);
   }
 
-  // 8. Project context
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
     if (project.description) prompt += `\n${project.description}`;
@@ -555,13 +554,11 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     if (project.custom_instructions) prompt += `\nProject Instructions: ${project.custom_instructions}`;
   }
 
-  // 9. Retrieved session memories
   if (memories && memories.length > 0) {
     prompt += `\n\n## Relevant Past Context`;
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
   }
 
-  // 10. Retrieved framework, library, and project documents
   if (libraryDocs && libraryDocs.length > 0) {
     prompt += `\n\n## Relevant Frameworks, Guidance and Project Documents`;
     libraryDocs.forEach(d => {
