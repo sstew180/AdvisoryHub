@@ -3,6 +3,8 @@ const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
+const { buildWordDocument, safeFilename, WORD_MIME } = require('../lib/buildWord');
+const { uploadAndSign } = require('../lib/storage');
 const {
   effectivePreferences,
   buildIdentityBlock,
@@ -43,10 +45,107 @@ const PROJECT_MATCH_COUNT = 6;
 const LIBRARY_MATCH_COUNT = 8;
 
 // =============================================================================
+// Tool definitions (FEAT-WORD)
+// =============================================================================
+// AI-authored Word documents. Stage 1 covers Word only. Excel, PowerPoint,
+// and PDF are deferred to follow-on cards.
+//
+// The tool description deliberately frames WHEN to use vs WHEN NOT to. The
+// model decides based on user intent, so the description carries that signal.
+// The system prompt also reminds the model of this capability (see
+// buildSystemPrompt below).
+// =============================================================================
+
+const TOOLS = [
+  {
+    name: 'create_word_document',
+    description:
+      'Create a downloadable Microsoft Word document (.docx). ' +
+      'Use this tool when the user requests a finished, formal deliverable ' +
+      'such as a briefing note, memo, report, board paper, council paper, ' +
+      'executive summary, position paper, draft letter, or other formal ' +
+      'document the user would expect to download and edit. ' +
+      'Do NOT use this tool for short answers, explanations, brainstorming, ' +
+      'casual discussion, or content that fits naturally as a chat response. ' +
+      'When the request is ambiguous (could be either a chat response or a ' +
+      'document), briefly ask the user which they prefer before calling ' +
+      'the tool. After the tool runs you will receive the download URL and ' +
+      'must include it in your response to the user as a Markdown link so ' +
+      'they can download the document.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description:
+            'The document title. Should be specific and descriptive, e.g. ' +
+            '"Briefing Note: Procurement Threshold Review" rather than just ' +
+            '"Briefing Note".',
+        },
+        subtitle: {
+          type: 'string',
+          description:
+            'Optional subtitle, often used for the document type or audience, ' +
+            'e.g. "Prepared for the Audit and Risk Committee".',
+        },
+        organisation: {
+          type: 'string',
+          description:
+            'Optional organisation name to display in the document header. ' +
+            'If the user has indicated their organisation (e.g. City of Gold ' +
+            'Coast), use that. Otherwise omit.',
+        },
+        sections: {
+          type: 'array',
+          description:
+            'The body of the document, organised into sections. Each section ' +
+            'has a heading and content (paragraphs and/or bullets). Order ' +
+            'sections logically: typically Background or Context first, then ' +
+            'Analysis or Discussion, then Recommendations or Next Steps.',
+          items: {
+            type: 'object',
+            properties: {
+              heading: {
+                type: 'string',
+                description: 'Section heading text.',
+              },
+              level: {
+                type: 'integer',
+                enum: [1, 2, 3],
+                description:
+                  'Heading level: 1 for major section, 2 for sub-section, ' +
+                  '3 for detail. Use 2 by default. Only use 1 sparingly for ' +
+                  'top-level divisions of a long document.',
+              },
+              paragraphs: {
+                type: 'array',
+                description:
+                  'Body paragraphs for this section. Plain text. Do not use ' +
+                  'markdown syntax (no **bold**, no _italics_, no # headings). ' +
+                  'For bullet lists, use the bullets field instead.',
+                items: { type: 'string' },
+              },
+              bullets: {
+                type: 'array',
+                description:
+                  'Optional bullet list for this section. Plain text per item. ' +
+                  'Do not include the bullet character; it is added automatically.',
+                items: { type: 'string' },
+              },
+            },
+            required: ['heading', 'level'],
+          },
+        },
+      },
+      required: ['title', 'sections'],
+    },
+  },
+];
+
+// =============================================================================
 // Helpers for richer status messages (FEAT-STATUS)
 // =============================================================================
 
-// List up to maxNamed titles inline; overflow rest as "and N more".
 function formatTitleList(items, maxNamed = 3) {
   if (!items || items.length === 0) return '';
   if (items.length <= maxNamed) {
@@ -56,17 +155,139 @@ function formatTitleList(items, maxNamed = 3) {
   return `${named} and ${items.length - maxNamed} more`;
 }
 
-// SSE write helper -- single source of truth for the wire format.
 function emitStatus(res, message) {
   res.write(`data: ${JSON.stringify({ status: message })}\n\n`);
 }
 
-// Pick a clean display name from the profile.
 function displayName(profile) {
   if (!profile) return null;
   const first = (profile.first_name || '').trim();
   return first || null;
 }
+
+// =============================================================================
+// Tool execution
+// =============================================================================
+
+/**
+ * Execute the create_word_document tool. Builds the docx, uploads to Supabase
+ * Storage, and returns a tool-result payload that includes the signed URL
+ * plus instructions for Claude on how to surface it to the user.
+ */
+async function executeCreateWordDocument(input, { userId, sessionId, res }) {
+  const title = (input && input.title) || 'document';
+  emitStatus(res, `Creating Word document: ${title}`);
+
+  const buffer = await buildWordDocument(input);
+  const filename = safeFilename(title);
+  const storagePath = `${userId}/${sessionId}/${filename}`;
+  const { signedUrl } = await uploadAndSign(buffer, storagePath, WORD_MIME);
+
+  emitStatus(res, `Document ready: ${filename}`);
+
+  // Tool result: instruct Claude to surface the link in its reply. We
+  // explicitly ask for a Markdown link because the frontend renders Markdown
+  // and that gives the user a clickable download link inline in the chat.
+  return (
+    `Document created successfully.\n\n` +
+    `Title: ${title}\n` +
+    `Filename: ${filename}\n` +
+    `Download URL: ${signedUrl}\n\n` +
+    `Provide this URL to the user as a Markdown link in your response. ` +
+    `Format the link exactly like this: [${filename}](${signedUrl}). ` +
+    `After the link, briefly confirm the document is ready and ask whether ` +
+    `they would like any revisions. Keep the surrounding text short; the ` +
+    `document itself contains the substantive content.`
+  );
+}
+
+// =============================================================================
+// Streaming tool-use loop
+// =============================================================================
+// Pattern: stream Claude's response. If stop_reason is tool_use, run the
+// requested tools, append assistant message + tool results to the message
+// history, and stream the next round. Cap rounds to avoid runaway loops.
+// =============================================================================
+
+const TOOL_HANDLERS = {
+  create_word_document: executeCreateWordDocument,
+};
+
+async function streamWithTools({ baseParams, res, context, maxRounds = 3 }) {
+  let currentMessages = baseParams.messages;
+
+  for (let round = 0; round < maxRounds; round++) {
+    const stream = anthropic.messages.stream({
+      ...baseParams,
+      messages: currentMessages,
+    });
+
+    // Stream text deltas to the client as they arrive. Other event types
+    // (tool_use deltas etc.) are buffered by the SDK and surfaced via
+    // finalMessage(); we don't need to handle them here.
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
+      }
+    }
+
+    const finalMessage = await stream.finalMessage();
+
+    // No tool call: we're done.
+    if (finalMessage.stop_reason !== 'tool_use') {
+      return;
+    }
+
+    const toolUseBlocks = finalMessage.content.filter(b => b.type === 'tool_use');
+    if (toolUseBlocks.length === 0) {
+      return;
+    }
+
+    // Execute every tool the model invoked in this turn.
+    const toolResults = [];
+    for (const toolUse of toolUseBlocks) {
+      const handler = TOOL_HANDLERS[toolUse.name];
+      try {
+        const resultContent = handler
+          ? await handler(toolUse.input, context)
+          : `Unknown tool: ${toolUse.name}`;
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: resultContent,
+        });
+      } catch (err) {
+        console.error(`Tool error (${toolUse.name}):`, err);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          is_error: true,
+          content: `Failed to execute tool: ${err.message}`,
+        });
+      }
+    }
+
+    // Append the assistant turn (which contains the tool_use blocks) and the
+    // tool results, then loop.
+    currentMessages = [
+      ...currentMessages,
+      { role: 'assistant', content: finalMessage.content },
+      { role: 'user', content: toolResults },
+    ];
+  }
+
+  // Exhausted rounds. Tell the user something went wrong rather than
+  // silently truncate.
+  res.write(
+    `data: ${JSON.stringify({
+      text: '\n\n(I hit the maximum number of tool rounds. The document above is what was produced.)',
+    })}\n\n`
+  );
+}
+
+// =============================================================================
+// Main route
+// =============================================================================
 
 router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode } = req.body;
@@ -116,13 +337,8 @@ router.post('/', async (req, res) => {
         `Drawing on ${memories.length} earlier conversation${memories.length !== 1 ? 's' : ''}`
       );
     }
-    // (No message emitted when there are no prior memories. Silence is the
-    // right signal here; previously this said "starting fresh" which was noise.)
 
     // 5. Tiered library retrieval
-    //    Pass A: project-scoped documents at lower threshold
-    //    Pass B: global library at moderate threshold
-    //    Merge and dedupe by id.
     emitStatus(res, 'Searching the library...');
 
     let projectScopedDocs = [];
@@ -137,9 +353,6 @@ router.post('/', async (req, res) => {
       if (error) {
         console.error('Project-scoped retrieval error:', error);
       } else {
-        // Keep only true project-scoped hits. The RPC also returns admin/global
-        // and user-personal docs which we want graded against the stricter
-        // library threshold instead.
         projectScopedDocs = (data || []).filter(d => d.project_id === projectId);
       }
     }
@@ -155,8 +368,6 @@ router.post('/', async (req, res) => {
       console.error('Library retrieval error:', libraryError);
     }
 
-    // Merge and deduplicate by id. Project hits come first so they take
-    // precedence in any iteration order downstream.
     const seen = new Set();
     const libraryDocs = [];
     for (const d of [...(projectScopedDocs || []), ...(libraryHits || [])]) {
@@ -175,26 +386,21 @@ router.post('/', async (req, res) => {
       );
       const projectDocs = libraryDocs.filter(d => d.project_id);
 
-      // Project documents now name the actual files instead of just a count.
       if (projectDocs.length > 0) {
         emitStatus(res, `Reviewing project documents: ${formatTitleList(projectDocs, 3)}`);
       }
-      // Skills: "Bringing in" reads more naturally than "Applying".
       if (skills.length > 0) {
         emitStatus(
           res,
           `Bringing in skill${skills.length !== 1 ? 's' : ''}: ${skills.map(d => d.title).join(', ')}`
         );
       }
-      // Frameworks / legislation / best practice: cross-referencing reads as
-      // a thinking step rather than a system action.
       if (frameworks.length > 0) {
         emitStatus(res, `Cross-referencing: ${formatTitleList(frameworks, 2)}`);
       }
     }
-    // (No message emitted when nothing was retrieved.)
 
-    // 6. Assemble system prompt
+    // 6. Personalisation status
     const isGuided = mode !== 'direct';
 
     if (profile) {
@@ -232,21 +438,23 @@ router.post('/', async (req, res) => {
 
     emitStatus(res, 'Drafting your response...');
 
-    let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
+    const systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
-    // 7. Call Claude with SSE streaming
-    const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: messages,
+    // 7. Stream Claude with tool support
+    await streamWithTools({
+      baseParams: {
+        // Bumped from 2048 to 8192 because document tool calls can produce
+        // long structured input (briefing notes, board papers). 8192 leaves
+        // ample room while staying well under model limits.
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8192,
+        system: systemPrompt,
+        tools: TOOLS,
+        messages: messages,
+      },
+      res,
+      context: { userId, sessionId, res },
     });
-
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
-      }
-    }
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -254,7 +462,6 @@ router.post('/', async (req, res) => {
   } catch (err) {
     console.error(err);
     if (res.headersSent) {
-      // SSE stream already open. Send error as an SSE event and close cleanly.
       try {
         res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -263,7 +470,6 @@ router.post('/', async (req, res) => {
         console.error('Failed to write error to open SSE stream:', writeErr);
       }
     } else {
-      // Headers not yet sent. Standard JSON 500 response.
       res.status(500).json({ error: err.message });
     }
   }
@@ -273,16 +479,17 @@ router.post('/', async (req, res) => {
 // buildSystemPrompt
 // Assembly order matches v1.0 spec Section 3.4 and is unchanged in v2.0.
 //
-//   1. Core identity statement (sector pack)
-//   2. User identity and context
-//   3. Hard constraints (banned words, redactions, language) - always
-//   4. Working style (Guided mode only)
-//   5. Voice and language markers (Guided mode only, typically Phase 2+)
-//   6. Quality requirements (high scrutiny, self audit) - always
-//   7. Legacy free-form preferences - backward compatibility
-//   8. Project context
-//   9. Retrieved session memories
-//  10. Retrieved framework, library, and project documents
+//   1.   Core identity statement (sector pack)
+//   1.5  Document creation capability (FEAT-WORD)
+//   2.   User identity and context
+//   3.   Hard constraints (banned words, redactions, language) - always
+//   4.   Working style (Guided mode only)
+//   5.   Voice and language markers (Guided mode only, typically Phase 2+)
+//   6.   Quality requirements (high scrutiny, self audit) - always
+//   7.   Legacy free-form preferences - backward compatibility
+//   8.   Project context
+//   9.   Retrieved session memories
+//  10.   Retrieved framework, library, and project documents
 //
 // Project preference_overrides are merged on top of profile preferences
 // before any block builder runs, via effectivePreferences().
@@ -299,6 +506,20 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     'legislation including the Local Government Act 2009 and Local Government Regulation ' +
     '2012, and Queensland Audit Office better practice guidelines. You cite your sources ' +
     'when drawing on retrieved documents.';
+
+  // 1.5 Document creation capability
+  prompt +=
+    '\n\n## Document Creation\n' +
+    'You can create downloadable Microsoft Word documents using the ' +
+    'create_word_document tool. Use this tool when the user requests a ' +
+    'finished, formal deliverable such as a briefing note, memo, report, ' +
+    'board paper, council paper, executive summary, position paper, or ' +
+    'draft letter. When the request is ambiguous (could be either a chat ' +
+    'response or a document), briefly ask the user which they prefer ' +
+    'before calling the tool. Do not use the tool for short answers, ' +
+    'explanations, or casual discussion. After the tool runs you will ' +
+    'receive a download URL which you must surface to the user as a ' +
+    'Markdown link in your reply.';
 
   const prefs = effectivePreferences(profile, project);
 
