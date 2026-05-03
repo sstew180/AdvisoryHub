@@ -560,7 +560,9 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
             </svg>
           </button>
           <button className='btn btn-secondary' onClick={() => setEditing(null)}>&larr; Back</button>
-          <div className='page-title' style={{ margin: 0 }}>{editing.id ? 'Edit Project' : 'New Project'}</div>
+          <div className='page-title' style={{ margin: 0 }}>
+            {editing.id ? (editing.name || 'Project') : 'New Project'}
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
@@ -716,11 +718,19 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
         const isExpanded = expanded[p.id];
         return (
           <div key={p.id}>
-            <div className='card' style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            {/* ─── FIX-PROJ-CLICK / FEAT-PROJ-VIEW: card now opens project detail ── */}
+            <div
+              className='card'
+              onClick={() => setEditing(p)}
+              title='Open project'
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+            >
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {subs.length > 0 && (
-                    <button onClick={() => toggleExpand(p.id)}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleExpand(p.id); }}
+                      title={isExpanded ? 'Collapse' : 'Expand sub-projects'}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11,
                         color: 'var(--text-muted)', padding: '0 2px', lineHeight: 1 }}>
                       {isExpanded ? '▼' : '▶'}
@@ -737,7 +747,11 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                 {p.description && <div className='card-meta'>{p.description.slice(0, 100)}</div>}
                 <CountBar projectId={p.id} />
               </div>
-              <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+              {/* Action buttons -- stop propagation so they don't trigger card click */}
+              <div
+                style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}
+                onClick={(e) => e.stopPropagation()}
+              >
                 <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(p)}>Edit</button>
                 {activeProject?.id === p.id
                   ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
@@ -749,9 +763,15 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
               </div>
             </div>
             {isExpanded && subs.map(sp => (
-              <div key={sp.id} className='card' style={{ display: 'flex', justifyContent: 'space-between',
-                alignItems: 'flex-start', marginLeft: 24, borderLeft: '2px solid var(--accent)',
-                borderRadius: '0 6px 6px 0' }}>
+              <div
+                key={sp.id}
+                className='card'
+                onClick={() => setEditing(sp)}
+                title='Open sub-project'
+                style={{ display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'flex-start', marginLeft: 24, borderLeft: '2px solid var(--accent)',
+                  borderRadius: '0 6px 6px 0' }}
+              >
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
@@ -760,7 +780,10 @@ export default function ProjectsPage({ session, activeProject, setActiveProject,
                   {sp.description && <div className='card-meta'>{sp.description.slice(0, 100)}</div>}
                   <CountBar projectId={sp.id} />
                 </div>
-                <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+                <div
+                  style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button className='btn btn-secondary' style={{ fontSize: 12 }} onClick={() => setEditing(sp)}>Edit</button>
                   {activeProject?.id === sp.id
                     ? <button className='btn btn-secondary' style={{ fontSize: 12, color: 'var(--accent)' }} onClick={() => setActiveProject(null)}>Active</button>
