@@ -51,14 +51,14 @@ const TOOLS = [
       'document), briefly ask the user which they prefer before calling ' +
       'the tool. ' +
       '\n\n' +
-      'TEMPLATES: When the user asks for a briefing note and works for the ' +
-      'City of Gold Coast (or has not specified a different organisation), ' +
-      'use template="briefing_note". This produces a properly branded Gold ' +
-      'Coast briefing note with logo and standard metadata fields. Before ' +
-      'calling the tool with a template, ASK the user for any metadata you ' +
-      'do not know: To (recipient), From (author), Copy, Action by, File no. ' +
-      'You may default Subject to the document title and Date to today. ' +
-      'It is acceptable to leave optional fields blank if the user has not ' +
+      'TEMPLATES: For ANY briefing note request, you MUST set ' +
+      'template="briefing_note". This is non-negotiable: briefing notes ' +
+      'always use the Gold Coast template (logo, metadata table, branded ' +
+      'fonts and footer). Before calling the tool with this template, ASK ' +
+      'the user for any metadata fields you do not know: To (recipient), ' +
+      'From (author, default to user profile), Copy, Action by, File no. ' +
+      'Subject defaults to the document title and Date to today. It is ' +
+      'acceptable to leave optional fields blank if the user has not ' +
       'provided them and does not want to be asked again. ' +
       '\n\n' +
       'After the tool runs you will receive the download URL and must include ' +
@@ -79,11 +79,9 @@ const TOOLS = [
           type: 'string',
           enum: ['briefing_note'],
           description:
-            'Optional template name. When set, the document is rendered into ' +
-            'the named branded template. ' +
-            'Use "briefing_note" for City of Gold Coast briefing notes; this ' +
-            'is the recommended default when a Gold Coast user asks for a ' +
-            'briefing note. Omit this field to produce a generic AdvisoryHub-' +
+            'Template name. REQUIRED for briefing notes (always set ' +
+            '"briefing_note" for any briefing note request). Optional for ' +
+            'other document types; omit to produce a generic AdvisoryHub-' +
             'styled document from scratch.',
         },
         metadata: {
@@ -210,16 +208,49 @@ function displayName(profile) {
 }
 
 // =============================================================================
+// Backstop: detect briefing note intent and force the template
+// =============================================================================
+// If Claude forgets to set template="briefing_note" but the title clearly
+// indicates a briefing note, we set it anyway. This protects against the
+// model occasionally skipping the template parameter even though the system
+// prompt requires it.
+//
+// Detection is intentionally narrow (literal "briefing note" in title) to
+// avoid false positives like "memo" or "report" which legitimately use the
+// scratch builder.
+// =============================================================================
+
+const BRIEFING_NOTE_PATTERN = /\bbriefing\s*note\b/i;
+
+function applyTemplateBackstop(input) {
+  if (!input || typeof input !== 'object') return input;
+  if (input.template) return input; // Claude already set it
+
+  const title = typeof input.title === 'string' ? input.title : '';
+  if (BRIEFING_NOTE_PATTERN.test(title)) {
+    console.log(
+      `[FEAT-WORD] Backstop applied: title "${title}" → template=briefing_note`
+    );
+    return { ...input, template: 'briefing_note' };
+  }
+  return input;
+}
+
+// =============================================================================
 // Tool execution
 // =============================================================================
 
-async function executeCreateWordDocument(input, { userId, sessionId, res }) {
+async function executeCreateWordDocument(rawInput, { userId, sessionId, res }) {
+  const input = applyTemplateBackstop(rawInput);
   const title = (input && input.title) || 'document';
   const usingTemplate = input && typeof input.template === 'string';
-  const templateLabel = usingTemplate
-    ? `${input.template.replace(/_/g, ' ')} template`
-    : 'Word document';
-  emitStatus(res, `Creating ${templateLabel}: ${title}`);
+
+  // Status message that explicitly names the path so it's visible in the UI.
+  if (usingTemplate && input.template === 'briefing_note') {
+    emitStatus(res, `Creating Gold Coast briefing note: ${title}`);
+  } else {
+    emitStatus(res, `Creating Word document: ${title}`);
+  }
 
   const buffer = await buildWordDocument(input);
   const filename = safeFilename(title);
@@ -232,6 +263,7 @@ async function executeCreateWordDocument(input, { userId, sessionId, res }) {
     `Document created successfully.\n\n` +
     `Title: ${title}\n` +
     `Filename: ${filename}\n` +
+    `Template used: ${usingTemplate ? input.template : 'none (scratch build)'}\n` +
     `Download URL: ${signedUrl}\n\n` +
     `Provide this URL to the user as a Markdown link in your response. ` +
     `Format the link exactly like this: [${filename}](${signedUrl}). ` +
@@ -502,7 +534,6 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     '2012, and Queensland Audit Office better practice guidelines. You cite your sources ' +
     'when drawing on retrieved documents.';
 
-  // Document creation capability and template-aware behaviour
   prompt +=
     '\n\n## Document Creation\n' +
     'You can create downloadable Microsoft Word documents using the ' +
@@ -515,21 +546,27 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, isGuided) {
     'explanations, or casual discussion. After the tool runs you will ' +
     'receive a download URL which you must surface to the user as a ' +
     'Markdown link in your reply.\n\n' +
-    '### Templates\n' +
-    'For Gold Coast briefing notes, set template="briefing_note" in the ' +
-    'tool call. This applies the official Gold Coast template (logo, ' +
-    'metadata table, standard fonts and footer). Before calling the tool ' +
-    'with this template, ask the user for the metadata fields you do not ' +
-    'know:\n' +
-    '- To (recipient): required\n' +
+    '### Briefing Notes (MANDATORY TEMPLATE)\n' +
+    'Briefing notes ALWAYS use the Gold Coast template. When the user asks ' +
+    'for a briefing note (any phrasing: "draft a briefing note", "I need ' +
+    'a brief", "can you put together a BN on...", etc.), you MUST set ' +
+    'template="briefing_note" in the tool call. There are no exceptions ' +
+    'to this rule for briefing notes.\n\n' +
+    'Before calling the tool, ask the user for the metadata fields you do ' +
+    'not know:\n' +
+    '- To (recipient): required, ask if not given\n' +
     '- From (author): default to the user\'s name and role from their profile\n' +
-    '- Copy: optional\n' +
-    '- Action by: optional\n' +
-    '- File no: optional, ask if relevant\n' +
+    '- Copy: optional, ask if context suggests it (e.g. CFO involvement)\n' +
+    '- Action by: optional, ask only if relevant\n' +
+    '- File no: optional, ask once but accept blank\n' +
     '- Subject: defaults to document title\n' +
     '- Date: defaults to today\n' +
-    'Do not invent values for these fields. Ask the user, accept that the ' +
-    'user may want to leave some blank, then proceed.';
+    'Do not invent values for these fields. Ask the user. Accept that they ' +
+    'may want to leave some blank, then proceed.\n\n' +
+    '### Other document types\n' +
+    'For documents other than briefing notes (memos, reports, board papers, ' +
+    'etc.), do not set the template parameter. The scratch builder will ' +
+    'produce an AdvisoryHub-styled document.';
 
   const prefs = effectivePreferences(profile, project);
 
