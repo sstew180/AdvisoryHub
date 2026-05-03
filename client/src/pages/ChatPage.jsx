@@ -260,11 +260,11 @@ function MicButton({ onTranscript, disabled }) {
       title={listening ? 'Tap to stop recording' : 'Speak your prompt'}
       style={{
         background: 'none', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
-        padding: '2px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: listening ? '#e53e3e' : 'var(--text-muted)', transition: 'color 0.15s',
         opacity: disabled ? 0.4 : 1, animation: listening ? 'micPulse 1s ease-in-out infinite' : 'none',
       }}>
-      <svg width='16' height='16' viewBox='0 0 16 16' fill='currentColor'>
+      <svg width='20' height='20' viewBox='0 0 16 16' fill='currentColor'>
         <rect x='5' y='1' width='6' height='9' rx='3' />
         <path d='M2.5 7.5A5.5 5.5 0 0 0 8 13a5.5 5.5 0 0 0 5.5-5.5' stroke='currentColor' strokeWidth='1.5' fill='none' strokeLinecap='round'/>
         <line x1='8' y1='13' x2='8' y2='15' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round'/>
@@ -318,8 +318,15 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
   const [attachedFile, setAttachedFile] = useState(null);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [sessionArchived, setSessionArchived] = useState(false);
+
+  // ─── FEAT-MEM: Capture Memory state ────────────────────────────────────────
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureText, setCaptureText] = useState('');
+  const [capturing, setCapturing] = useState(false);
+
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  const captureTextareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -338,6 +345,13 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }, [input]);
+
+  // Auto-focus the capture textarea when the panel opens
+  useEffect(() => {
+    if (captureOpen) {
+      setTimeout(() => captureTextareaRef.current?.focus(), 50);
+    }
+  }, [captureOpen]);
 
   const ensureSession = async () => {
     if (activeSessionId) return activeSessionId;
@@ -371,9 +385,60 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
 
   const removeAttachment = () => setAttachedFile(null);
 
+  // ─── FEAT-MEM: route mic dictation to the active textarea ──────────────────
+  // When the capture panel is open, transcription goes into the capture textarea.
+  // Otherwise it goes into the chat input.
   const handleTranscript = (transcript) => {
-    setInput(prev => prev ? prev + ' ' + transcript : transcript);
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    if (captureOpen) {
+      setCaptureText(prev => prev ? prev + ' ' + transcript : transcript);
+      setTimeout(() => captureTextareaRef.current?.focus(), 50);
+    } else {
+      setInput(prev => prev ? prev + ' ' + transcript : transcript);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+  };
+
+  // ─── FEAT-MEM: open / cancel / save ────────────────────────────────────────
+  const openCapture = () => {
+    setCaptureOpen(true);
+  };
+
+  const cancelCapture = () => {
+    setCaptureOpen(false);
+    setCaptureText('');
+  };
+
+  const saveMemory = async () => {
+    const content = captureText.trim();
+    if (!content || capturing) return;
+    setCapturing(true);
+    try {
+      const sessionId = await ensureSession();
+      const response = await fetch(API + '/api/pin-memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: session.user.id,
+          sessionId,
+          projectId: activeProject?.id || null,
+          content,
+        }),
+      });
+      if (!response.ok) throw new Error('Save failed');
+
+      // Reuse the existing topbar confirmation badge
+      setAutoCaptured(content.slice(0, 80));
+      setTimeout(() => setAutoCaptured(null), 4000);
+
+      // Clear panel state and activate the session so the user can see it in the sidebar
+      setCaptureText('');
+      setCaptureOpen(false);
+      setActiveSessionId(sessionId);
+    } catch (err) {
+      console.error('Memory save error:', err);
+      // Leave the panel open with the user's text intact so they can retry.
+    }
+    setCapturing(false);
   };
 
   const injectPrompt = (prompt) => {
@@ -609,7 +674,7 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
             background: 'rgba(0,145,164,0.08)', border: '1px solid var(--accent)',
             borderRadius: 'var(--radius)', padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-            Note captured
+            Memory captured
           </div>
         )}
         {activeSessionId && messages.length > 0 && (
@@ -737,21 +802,102 @@ export default function ChatPage({ session, activeSessionId, setActiveSessionId,
                 </div>
               )}
 
+              {/* ─── FEAT-MEM: Capture Memory inline panel ─────────────────── */}
+              {captureOpen && (
+                <div style={{
+                  borderBottom: '1px solid var(--border)',
+                  padding: '10px 14px',
+                  background: 'rgba(0,145,164,0.04)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)',
+                      display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width='14' height='14' viewBox='0 0 20 20' fill='currentColor'>
+                        <path d='M5 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14l-5-3-5 3z'/>
+                      </svg>
+                      Capture memory
+                    </span>
+                    <button onClick={cancelCapture} disabled={capturing} title='Cancel'
+                      style={{ background: 'none', border: 'none', cursor: capturing ? 'not-allowed' : 'pointer',
+                        fontSize: 18, color: 'var(--text-muted)', padding: '0 4px', lineHeight: 1 }}>×</button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                    Save a thought, note, or decision so AdvisoryHub can surface it in future sessions
+                    {activeProject ? ` on ${activeProject.name}` : ''}.
+                    Use the mic below to dictate.
+                  </div>
+                  <textarea
+                    ref={captureTextareaRef}
+                    value={captureText}
+                    onChange={e => setCaptureText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveMemory(); }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelCapture(); }
+                    }}
+                    placeholder='e.g. Just left meeting with the CFO -- concerned about not getting regular updates.'
+                    rows={3}
+                    disabled={capturing}
+                    style={{
+                      width: '100%', padding: '8px 10px',
+                      border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                      fontSize: 13, fontFamily: 'var(--font)', lineHeight: 1.5,
+                      color: 'var(--text-primary)', background: 'var(--bg)',
+                      resize: 'vertical', outline: 'none', minHeight: 60, maxHeight: 160,
+                    }}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      Ctrl+Enter to save, Esc to cancel
+                    </span>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button onClick={cancelCapture} disabled={capturing}
+                        style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none',
+                          border: 'none', cursor: capturing ? 'not-allowed' : 'pointer', padding: '4px 8px' }}>
+                        Cancel
+                      </button>
+                      <button onClick={saveMemory}
+                        disabled={!captureText.trim() || capturing}
+                        className='send-btn' style={{ padding: '5px 14px', fontSize: 12 }}>
+                        {capturing ? 'Saving...' : 'Save memory'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <textarea ref={textareaRef} className='input-textarea' value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder='Ask AdvisoryHub... (Shift+Enter for new line)' rows={1} />
 
               <div className='input-footer'>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <label title='Attach a document (PDF, DOCX, TXT)'
                     style={{ cursor: 'pointer', color: attachedFile ? 'var(--accent)' : 'var(--text-muted)',
-                      fontSize: 16, display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
+                      fontSize: 20, lineHeight: 1, padding: '4px 6px',
+                      display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}>
                     📎
                     <input ref={fileInputRef} type='file' style={{ display: 'none' }}
                       accept='.pdf,.docx,.txt,.md' onChange={handleFileChange} />
                   </label>
-                  <MicButton onTranscript={handleTranscript} disabled={streaming} />
+                  <MicButton onTranscript={handleTranscript} disabled={streaming || capturing} />
+                  <button onClick={openCapture} disabled={captureOpen || capturing}
+                    title='Capture a memory (a thought, note, or decision to remember)'
+                    style={{
+                      background: 'none', border: 'none',
+                      cursor: (captureOpen || capturing) ? 'not-allowed' : 'pointer',
+                      padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: captureOpen ? 'var(--accent)' : 'var(--text-muted)',
+                      transition: 'color 0.15s', opacity: capturing ? 0.4 : 1,
+                    }}
+                    onMouseEnter={e => { if (!captureOpen && !capturing) e.currentTarget.style.color = 'var(--accent)'; }}
+                    onMouseLeave={e => { if (!captureOpen && !capturing) e.currentTarget.style.color = 'var(--text-muted)'; }}>
+                    <svg width='20' height='20' viewBox='0 0 20 20' fill='none'
+                      stroke='currentColor' strokeWidth='1.6' strokeLinecap='round' strokeLinejoin='round'>
+                      <path d='M5 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14l-5-3-5 3z'/>
+                    </svg>
+                  </button>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {activeProject ? <><span className='context-enabled'></span>{activeProject.name}</> : 'No project active'}
                   </span>
