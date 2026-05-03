@@ -42,6 +42,32 @@ const LIBRARY_THRESHOLD = 0.55;
 const PROJECT_MATCH_COUNT = 6;
 const LIBRARY_MATCH_COUNT = 8;
 
+// =============================================================================
+// Helpers for richer status messages (FEAT-STATUS)
+// =============================================================================
+
+// List up to maxNamed titles inline; overflow rest as "and N more".
+function formatTitleList(items, maxNamed = 3) {
+  if (!items || items.length === 0) return '';
+  if (items.length <= maxNamed) {
+    return items.map(d => d.title).join(', ');
+  }
+  const named = items.slice(0, maxNamed).map(d => d.title).join(', ');
+  return `${named} and ${items.length - maxNamed} more`;
+}
+
+// SSE write helper -- single source of truth for the wire format.
+function emitStatus(res, message) {
+  res.write(`data: ${JSON.stringify({ status: message })}\n\n`);
+}
+
+// Pick a clean display name from the profile.
+function displayName(profile) {
+  if (!profile) return null;
+  const first = (profile.first_name || '').trim();
+  return first || null;
+}
+
 router.post('/', async (req, res) => {
   const { userId, sessionId, projectId, messages, mode } = req.body;
 
@@ -72,11 +98,11 @@ router.post('/', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    res.write(`data: ${JSON.stringify({ status: 'Understanding your question...' })}\n\n`);
+    emitStatus(res, 'Reading your question...');
     const queryEmbedding = await embed(userQuery);
 
     // 4. Retrieve relevant session memories
-    res.write(`data: ${JSON.stringify({ status: 'Checking what we have covered in past sessions...' })}\n\n`);
+    emitStatus(res, 'Checking what we have discussed before...');
     const { data: memories } = await supabase.rpc('match_sessions', {
       query_embedding: queryEmbedding,
       match_user_id: userId,
@@ -85,16 +111,19 @@ router.post('/', async (req, res) => {
     });
 
     if (memories && memories.length > 0) {
-      res.write(`data: ${JSON.stringify({ status: `Found ${memories.length} relevant lesson${memories.length !== 1 ? 's' : ''} from your past sessions` })}\n\n`);
-    } else {
-      res.write(`data: ${JSON.stringify({ status: 'No prior session context found, starting fresh' })}\n\n`);
+      emitStatus(
+        res,
+        `Drawing on ${memories.length} earlier conversation${memories.length !== 1 ? 's' : ''}`
+      );
     }
+    // (No message emitted when there are no prior memories. Silence is the
+    // right signal here; previously this said "starting fresh" which was noise.)
 
     // 5. Tiered library retrieval
     //    Pass A: project-scoped documents at lower threshold
     //    Pass B: global library at moderate threshold
     //    Merge and dedupe by id.
-    res.write(`data: ${JSON.stringify({ status: 'Searching frameworks, legislation and skills library...' })}\n\n`);
+    emitStatus(res, 'Searching the library...');
 
     let projectScopedDocs = [];
     if (projectId) {
@@ -146,50 +175,62 @@ router.post('/', async (req, res) => {
       );
       const projectDocs = libraryDocs.filter(d => d.project_id);
 
+      // Project documents now name the actual files instead of just a count.
       if (projectDocs.length > 0) {
-        res.write(`data: ${JSON.stringify({ status: `Reading ${projectDocs.length} project document${projectDocs.length !== 1 ? 's' : ''} from your active project` })}\n\n`);
+        emitStatus(res, `Reviewing project documents: ${formatTitleList(projectDocs, 3)}`);
       }
+      // Skills: "Bringing in" reads more naturally than "Applying".
       if (skills.length > 0) {
-        res.write(`data: ${JSON.stringify({ status: `Applying skill${skills.length !== 1 ? 's' : ''}: ${skills.map(d => d.title).join(', ')}` })}\n\n`);
+        emitStatus(
+          res,
+          `Bringing in skill${skills.length !== 1 ? 's' : ''}: ${skills.map(d => d.title).join(', ')}`
+        );
       }
+      // Frameworks / legislation / best practice: cross-referencing reads as
+      // a thinking step rather than a system action.
       if (frameworks.length > 0) {
-        const names = frameworks.slice(0, 2).map(d => d.title).join(', ');
-        res.write(`data: ${JSON.stringify({ status: `Referencing: ${names}${frameworks.length > 2 ? ` and ${frameworks.length - 2} more` : ''}` })}\n\n`);
+        emitStatus(res, `Cross-referencing: ${formatTitleList(frameworks, 2)}`);
       }
-    } else {
-      res.write(`data: ${JSON.stringify({ status: 'No closely matched library documents found' })}\n\n`);
     }
+    // (No message emitted when nothing was retrieved.)
 
     // 6. Assemble system prompt
     const isGuided = mode !== 'direct';
 
     if (profile) {
-      const profileParts = [];
-      if (profile.role) profileParts.push(profile.role);
-      if (profile.service_area) profileParts.push(profile.service_area);
-      if (profileParts.length > 0) {
-        res.write(`data: ${JSON.stringify({ status: `Tailoring response for: ${profileParts.join(', ')}` })}\n\n`);
+      const role = (profile.role || '').trim();
+      const name = displayName(profile);
+
+      if (role) {
+        if (name) {
+          emitStatus(res, `Tailoring this for ${name} as ${role}...`);
+        } else {
+          emitStatus(res, `Considering your role as ${role}...`);
+        }
       }
 
       if (isGuided) {
         const configSource = describeConfigurationSource(profile);
         if (configSource) {
-          res.write(`data: ${JSON.stringify({ status: `Applying your ${configSource}...` })}\n\n`);
+          emitStatus(res, `Aligning with your ${configSource}...`);
         }
       }
     }
 
     if (project) {
-      res.write(`data: ${JSON.stringify({ status: `Applying project context: ${project.name}` })}\n\n`);
+      emitStatus(res, `Keeping ${project.name} in mind...`);
       const overrideCount = project.preference_overrides
         ? Object.keys(project.preference_overrides).length
         : 0;
       if (overrideCount > 0 && isGuided) {
-        res.write(`data: ${JSON.stringify({ status: `Applying ${overrideCount} project-level preference override${overrideCount !== 1 ? 's' : ''}` })}\n\n`);
+        emitStatus(
+          res,
+          `Applying ${overrideCount} project-specific preference${overrideCount !== 1 ? 's' : ''}`
+        );
       }
     }
 
-    res.write(`data: ${JSON.stringify({ status: 'Composing your response...' })}\n\n`);
+    emitStatus(res, 'Drafting your response...');
 
     let systemPrompt = buildSystemPrompt(profile, project, memories, libraryDocs, isGuided);
 
