@@ -10,8 +10,6 @@ const { embed } = require('../lib/embed');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Helper: look up a Supabase auth user by email.
-// For larger user bases, add an `email` column to profiles and query that directly.
 async function getUserByEmail(email) {
   const { data, error } = await supabase.auth.admin.listUsers();
   if (error) throw new Error(`Auth lookup failed: ${error.message}`);
@@ -23,8 +21,6 @@ async function getUserByEmail(email) {
   return user;
 }
 
-// Helper: assemble the system prompt scaffold.
-// Mirrors the structure used by the existing chat.js route.
 function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs) {
   let prompt =
     'You are AdvisoryHub, an AI-powered advisory assistant for local ' +
@@ -79,8 +75,6 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs)
 }
 
 // ---- POST /api/copilot/chat ----
-// Main chat endpoint. Synchronous: returns the full response as one JSON blob.
-// Body: { email, message, session_id (optional), project_id (optional) }
 router.post('/chat', async (req, res) => {
   const { email, message, session_id, project_id } = req.body || {};
 
@@ -117,6 +111,22 @@ router.post('/chat', async (req, res) => {
       activeSessionId = newSession.id;
     }
 
+    // Fetch prior conversation history BEFORE inserting current message
+    const { data: priorDesc } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('session_id', activeSessionId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    const priorHistory = (priorDesc || []).reverse();
+
+    // Build messages array for Claude: prior history plus the current user message
+    const messagesForClaude = [
+      ...priorHistory.map(m => ({ role: m.role, content: m.content })),
+      { role: 'user', content: message }
+    ];
+
+    // Save the user message to the database (does not affect what we send to Claude)
     await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'user',
@@ -149,14 +159,6 @@ router.post('/chat', async (req, res) => {
       projectDocs = data || [];
     }
 
-    const { data: recentDesc } = await supabase
-      .from('messages')
-      .select('role, content')
-      .eq('session_id', activeSessionId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    const messageHistory = (recentDesc || []).reverse();
-
     const systemPrompt = buildSystemPrompt(
       profile, project, memories, libraryDocs, projectDocs
     );
@@ -165,7 +167,7 @@ router.post('/chat', async (req, res) => {
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
-      messages: messageHistory.map(m => ({ role: m.role, content: m.content })),
+      messages: messagesForClaude,
     });
 
     const responseText = response.content
@@ -215,7 +217,6 @@ router.get('/profile', async (req, res) => {
 });
 
 // ---- PUT /api/copilot/profile ----
-// Body: { email, role?, service_area?, goals?, preferences?, artefact_preference?, high_scrutiny? }
 router.put('/profile', async (req, res) => {
   const { email, ...updates } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email is required in the body.' });
@@ -256,7 +257,7 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-// ---- GET /api/copilot/sessions?email=X&project_id=Y (project_id optional) ----
+// ---- GET /api/copilot/sessions?email=X&project_id=Y ----
 router.get('/sessions', async (req, res) => {
   const { email, project_id } = req.query;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
