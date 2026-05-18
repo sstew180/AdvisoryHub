@@ -293,5 +293,62 @@ router.get('/library', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ---- GET /api/copilot/modules?email=X ----
+// Returns the 12 tile-displayed modules with per-user accessibility flags.
+// Admin users see all modules as accessible regardless of user_modules grants.
 
+router.get('/modules', async (req, res) => {
+  const { email } = req.query;
+  if (!email) {
+    return res.status(400).json({ error: 'email query parameter is required.' });
+  }
+
+  try {
+    const user = await getUserByEmail(email);
+    const userId = user.id;
+
+    // Get user's profile (for admin check and last_active_module)
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('access_tier, last_active_module')
+      .eq('id', userId)
+      .single();
+    if (profileError) throw profileError;
+
+    const isAdmin = profile?.access_tier === 'admin';
+    const primaryModuleId = profile?.last_active_module;
+
+    // Get all modules that should appear on tiles
+    const { data: modules, error: modulesError } = await supabase
+      .from('modules')
+      .select('id, name, slug, description')
+      .eq('display_on_tiles', true)
+      .order('name');
+    if (modulesError) throw modulesError;
+
+    // Get user's accessible module IDs
+    const { data: grants, error: grantsError } = await supabase
+      .from('user_modules')
+      .select('module_id')
+      .eq('user_id', userId);
+    if (grantsError) throw grantsError;
+
+    const accessibleIds = new Set((grants || []).map(g => g.module_id));
+
+    // Merge: return all displayed modules with accessibility flag
+    const result = modules.map(m => ({
+      id: m.id,
+      name: m.name,
+      slug: m.slug,
+      description: m.description,
+      accessible: isAdmin || accessibleIds.has(m.id),
+      isPrimary: m.id === primaryModuleId,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error('GetModules error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 module.exports = router;
