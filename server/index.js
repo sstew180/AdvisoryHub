@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
+const copilotAuth = require('./middleware/copilotAuth');
 app.use(cors({ 
   origin: ['https://advisoryhub.rigour.app', 'http://localhost:5173'],
   credentials: true 
@@ -24,6 +24,7 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/modules', require('./routes/modules'));
 app.use('/api/suggest-prompts', require('./routes/suggestPrompts'));
 app.use('/api/generate-style', require('./routes/generateStyle'));
+app.use('/api/copilot', copilotAuth, require('./routes/copilot'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => console.log(`AdvisoryHub API running on port ${PORT}`));
