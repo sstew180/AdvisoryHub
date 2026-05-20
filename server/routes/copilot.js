@@ -247,12 +247,49 @@ router.get('/projects', async (req, res) => {
     const user = await getUserByEmail(email);
     const { data, error } = await supabase
       .from('projects')
-      .select('id, name, description, objectives, artefact_preference, high_scrutiny, created_at')
+      .select('id, name, description, objectives, artefact_preference, high_scrutiny, module_id, created_at')
       .eq('user_id', user.id)
+      .is('archived_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- POST /api/copilot/projects ----
+// Creates a new project for the user. Body: { email, name, description?, objectives?, module_id? }
+// Returns the created project record on success.
+router.post('/projects', async (req, res) => {
+  const { email, name, description, objectives, module_id } = req.body || {};
+
+  if (!email) {
+    return res.status(400).json({ error: 'email is required in the body.' });
+  }
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'name is required and cannot be blank.' });
+  }
+
+  try {
+    const user = await getUserByEmail(email);
+
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({
+        user_id: user.id,
+        name: name.trim(),
+        description: description || null,
+        objectives: objectives || null,
+        module_id: module_id || null,
+      })
+      .select('id, name, description, objectives, artefact_preference, high_scrutiny, module_id, created_at')
+      .single();
+
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (err) {
+    console.error('CreateProject error:', err);
     res.status(500).json({ error: err.message });
   }
 });
