@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const Anthropic = require('@anthropic-ai/sdk');
+const { marked } = require('marked');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 
@@ -20,6 +21,27 @@ const {
 } = require('../lib/prompts/preferenceMap');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Configure marked for the rendering Power Apps HtmlText control supports.
+// gfm gives line breaks on single newline; breaks ensures \n becomes <br>.
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  headerIds: false,
+  mangle: false,
+});
+
+// Helper: convert markdown text to HTML for clients that render HTML (Power Apps).
+// Returns empty string if input is empty/null.
+function toHtml(markdownText) {
+  if (!markdownText) return '';
+  try {
+    return marked.parse(markdownText);
+  } catch (err) {
+    console.error('Markdown render failed, returning raw text:', err);
+    return markdownText;
+  }
+}
 
 async function getUserByEmail(email) {
   const { data, error } = await supabase.auth.admin.listUsers();
@@ -132,7 +154,6 @@ router.post('/chat', async (req, res) => {
     // 1. If requestedSessionId is provided, verify it exists in the sessions table.
     // 2. If it exists and belongs to this user, reuse it (preserves conversation context).
     // 3. If it doesn't exist OR doesn't belong to this user, create a new session.
-    // This handles Power Apps connector sending placeholder/stale session_id values.
     let activeSessionId = null;
 
     if (requestedSessionId) {
@@ -160,7 +181,6 @@ router.post('/chat', async (req, res) => {
       activeSessionId = newSession.id;
     }
 
-    // Fetch prior conversation history BEFORE inserting current message
     const { data: priorDesc } = await supabase
       .from('messages')
       .select('role, content')
@@ -174,7 +194,6 @@ router.post('/chat', async (req, res) => {
       { role: 'user', content: message }
     ];
 
-    // Save the user message (with error check)
     const { error: userInsertError } = await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'user',
@@ -232,6 +251,8 @@ router.post('/chat', async (req, res) => {
       .map(block => block.text)
       .join('\n');
 
+    const responseHtml = toHtml(responseText);
+
     const { error: assistantInsertError } = await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'assistant',
@@ -249,6 +270,7 @@ router.post('/chat', async (req, res) => {
 
     res.json({
       response_text: responseText,
+      response_html: responseHtml,
       session_id: activeSessionId,
       citations,
       domain_pack: profile?.service_area || 'General',
@@ -384,6 +406,7 @@ router.get('/sessions', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions/:id/messages?email=X ----
+// Returns each message with both content (markdown) and content_html (rendered)
 router.get('/sessions/:id/messages', async (req, res) => {
   const { id: sessionId } = req.params;
   const { email } = req.query;
@@ -420,11 +443,17 @@ router.get('/sessions/:id/messages', async (req, res) => {
 
     if (messagesError) throw messagesError;
 
+    // Add content_html to each message so Power Apps can render via HtmlText
+    const messagesWithHtml = (messages || []).map(m => ({
+      ...m,
+      content_html: m.role === 'assistant' ? toHtml(m.content) : m.content,
+    }));
+
     res.json({
       session_id: session.id,
       project_id: session.project_id,
       title: session.title,
-      messages: messages || [],
+      messages: messagesWithHtml,
     });
   } catch (err) {
     console.error('GetSessionMessages error:', err);
