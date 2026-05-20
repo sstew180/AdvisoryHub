@@ -44,6 +44,15 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
 
+  // Personalisation: address the user by their first name where natural
+  if (profile && profile.first_name) {
+    prompt +=
+      `\n\nYou are speaking with ${profile.first_name}. ` +
+      `Address them by their first name occasionally where it reads naturally, ` +
+      `but do not overuse it. Never use their name in every paragraph or in ` +
+      `headings; restrict use to greetings, transitions, or moments of direct address.`;
+  }
+
   prompt += buildIdentityBlock(prefs);
   prompt += buildHardConstraintsBlock(prefs);
 
