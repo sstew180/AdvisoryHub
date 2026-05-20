@@ -8,6 +8,19 @@ const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 
+// SVR-4: Reuse the same preferenceMap that powers the AHP chat endpoint
+// so AHC produces the same rich, configured system prompt as AHP.
+const {
+  effectivePreferences,
+  buildIdentityBlock,
+  buildHardConstraintsBlock,
+  buildWorkingStyleBlock,
+  buildVoiceMarkersBlock,
+  buildQualityBlock,
+  buildLegacyPreferencesBlock,
+  describeConfigurationSource,
+} = require('../lib/preferenceMap');
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function getUserByEmail(email) {
@@ -21,7 +34,14 @@ async function getUserByEmail(email) {
   return user;
 }
 
-function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs) {
+// SVR-4: Rich system prompt assembly using preferenceMap blocks.
+// Identity, HardConstraints, and Quality blocks always apply (even in Direct mode).
+// WorkingStyle, VoiceMarkers, and LegacyPreferences are skipped when mode === 'direct'.
+// Project context, memories, library docs, and project docs are always included.
+function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDocs, mode }) {
+  const isGuided = mode !== 'direct';
+  const prefs = effectivePreferences(profile, project);
+
   let prompt =
     'You are AdvisoryHub, an AI-powered advisory assistant for local ' +
     'government officers in Queensland, Australia. You specialise in ' +
@@ -30,30 +50,41 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs)
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
 
-  if (profile) {
-    prompt += `\n\n## User Profile`;
-    if (profile.role) prompt += `\nRole: ${profile.role}`;
-    if (profile.service_area) prompt += `\nService Area: ${profile.service_area}`;
-    if (profile.goals) prompt += `\nCurrent Objectives: ${profile.goals}`;
-    if (profile.preferences) prompt += `\nCommunication Style: ${profile.preferences}`;
-    if (profile.artefact_preference) prompt += `\nDefault Output Format: ${profile.artefact_preference}`;
-    if (profile.high_scrutiny) {
-      prompt += `\n\nHIGH SCRUTINY MODE: Flag all assumptions. Note limitations. Recommend verification before use.`;
-    }
+  // Always-applied blocks
+  prompt += buildIdentityBlock(prefs);
+  prompt += buildHardConstraintsBlock(prefs);
+
+  // Guided-only blocks
+  if (isGuided) {
+    prompt += buildWorkingStyleBlock(prefs);
+    prompt += buildVoiceMarkersBlock(prefs);
   }
 
+  // Always-applied: quality flags are not style preferences
+  prompt += buildQualityBlock(prefs);
+
+  // Guided-only: free-form preferences text
+  if (isGuided) {
+    prompt += buildLegacyPreferencesBlock(prefs);
+  }
+
+  // Project context (always)
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
     if (project.description) prompt += `\n${project.description}`;
     if (project.objectives) prompt += `\nObjectives: ${project.objectives}`;
-    if (project.custom_instructions) prompt += `\nProject Instructions: ${project.custom_instructions}`;
+    if (project.custom_instructions) {
+      prompt += `\nProject Instructions: ${project.custom_instructions}`;
+    }
   }
 
+  // Memories (always)
   if (memories && memories.length > 0) {
     prompt += `\n\n## Relevant Past Context`;
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
   }
 
+  // Library docs (always)
   if (libraryDocs && libraryDocs.length > 0) {
     prompt += `\n\n## Relevant Frameworks and Guidance`;
     libraryDocs.forEach(d => {
@@ -63,6 +94,7 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs)
     });
   }
 
+  // Project docs (always)
   if (projectDocs && projectDocs.length > 0) {
     prompt += `\n\n## Relevant Project Documents`;
     projectDocs.forEach(d => {
@@ -75,8 +107,9 @@ function buildSystemPrompt(profile, project, memories, libraryDocs, projectDocs)
 }
 
 // ---- POST /api/copilot/chat ----
+// SVR-4: Now accepts mode ('guided' default, or 'direct' for unguided)
 router.post('/chat', async (req, res) => {
-  const { email, message, session_id, project_id } = req.body || {};
+  const { email, message, session_id, project_id, mode } = req.body || {};
 
   if (!email || !message) {
     return res.status(400).json({ error: 'email and message are required in the request body.' });
@@ -120,13 +153,12 @@ router.post('/chat', async (req, res) => {
       .limit(20);
     const priorHistory = (priorDesc || []).reverse();
 
-    // Build messages array for Claude: prior history plus the current user message
     const messagesForClaude = [
       ...priorHistory.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: message }
     ];
 
-    // Save the user message to the database (does not affect what we send to Claude)
+    // Save the user message
     await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'user',
@@ -159,9 +191,14 @@ router.post('/chat', async (req, res) => {
       projectDocs = data || [];
     }
 
-    const systemPrompt = buildSystemPrompt(
-      profile, project, memories, libraryDocs, projectDocs
-    );
+    const systemPrompt = buildSystemPrompt({
+      profile,
+      project,
+      memories,
+      libraryDocs,
+      projectDocs,
+      mode,
+    });
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -193,6 +230,8 @@ router.post('/chat', async (req, res) => {
       citations,
       domain_pack: profile?.service_area || 'General',
       high_scrutiny_active: profile?.high_scrutiny || false,
+      mode_active: mode === 'direct' ? 'direct' : 'guided',
+      configuration_source: describeConfigurationSource(profile),
     });
   } catch (err) {
     console.error('Copilot chat error:', err);
@@ -259,8 +298,8 @@ router.get('/projects', async (req, res) => {
 });
 
 // ---- POST /api/copilot/projects ----
-// Creates a new project for the user. Body: { email, name, description?, objectives?, module_id? }
-// Returns the created project record on success.
+// SVR-2: Creates a new project for the user.
+// Body: { email, name, description?, objectives?, module_id? }
 router.post('/projects', async (req, res) => {
   const { email, name, description, objectives, module_id } = req.body || {};
 
@@ -318,10 +357,8 @@ router.get('/sessions', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions/:id/messages?email=X ----
-// Returns the full message history for a session, ordered oldest first.
-// Used by Power Apps to load a previous conversation when the user clicks
-// a session in the right-hand panel. Verifies session ownership before
-// returning content.
+// SVR-1: Returns full message history for a session, ordered oldest first.
+// Verifies session ownership before returning content.
 router.get('/sessions/:id/messages', async (req, res) => {
   const { id: sessionId } = req.params;
   const { email } = req.query;
@@ -336,7 +373,6 @@ router.get('/sessions/:id/messages', async (req, res) => {
   try {
     const user = await getUserByEmail(email);
 
-    // Verify session belongs to this user before returning messages
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
       .select('id, user_id, project_id, title')
@@ -384,10 +420,10 @@ router.get('/library', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ---- GET /api/copilot/modules?email=X ----
 // Returns the 12 tile-displayed modules with per-user accessibility flags.
 // Admin users see all modules as accessible regardless of user_modules grants.
-
 router.get('/modules', async (req, res) => {
   const { email } = req.query;
   if (!email) {
@@ -398,7 +434,6 @@ router.get('/modules', async (req, res) => {
     const user = await getUserByEmail(email);
     const userId = user.id;
 
-    // Get user's profile (for admin check and last_active_module)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('access_tier, last_active_module')
@@ -409,7 +444,6 @@ router.get('/modules', async (req, res) => {
     const isAdmin = profile?.access_tier === 'admin';
     const primaryModuleId = profile?.last_active_module;
 
-    // Get all modules that should appear on tiles
     const { data: modules, error: modulesError } = await supabase
       .from('modules')
       .select('id, name, slug, description')
@@ -417,7 +451,6 @@ router.get('/modules', async (req, res) => {
       .order('name');
     if (modulesError) throw modulesError;
 
-    // Get user's accessible module IDs
     const { data: grants, error: grantsError } = await supabase
       .from('user_modules')
       .select('module_id')
@@ -426,7 +459,6 @@ router.get('/modules', async (req, res) => {
 
     const accessibleIds = new Set((grants || []).map(g => g.module_id));
 
-    // Merge: return all displayed modules with accessibility flag
     const result = modules.map(m => ({
       id: m.id,
       name: m.name,
@@ -442,4 +474,5 @@ router.get('/modules', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 module.exports = router;
