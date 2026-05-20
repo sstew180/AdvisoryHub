@@ -19,7 +19,7 @@ const {
   buildQualityBlock,
   buildLegacyPreferencesBlock,
   describeConfigurationSource,
-} = require('../lib/preferenceMap');
+} = require('../lib/prompts/preferenceMap');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
