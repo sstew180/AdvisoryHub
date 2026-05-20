@@ -8,8 +8,6 @@ const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 
-// SVR-4: Reuse the same preferenceMap that powers the AHP chat endpoint
-// so AHC produces the same rich, configured system prompt as AHP.
 const {
   effectivePreferences,
   buildIdentityBlock,
@@ -95,13 +93,11 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
 }
 
 // ---- POST /api/copilot/chat ----
-// Accepts session_id OR sessionId (Power Apps connector may camelCase the body field)
-// Same for project_id OR projectId
 router.post('/chat', async (req, res) => {
   const body = req.body || {};
   const email = body.email;
   const message = body.message;
-  const session_id = body.session_id || body.sessionId;
+  const requestedSessionId = body.session_id || body.sessionId;
   const project_id = body.project_id || body.projectId;
   const mode = body.mode;
 
@@ -123,7 +119,24 @@ router.post('/chat', async (req, res) => {
       project = data;
     }
 
-    let activeSessionId = session_id;
+    // SESSION RESOLUTION:
+    // 1. If requestedSessionId is provided, verify it exists in the sessions table.
+    // 2. If it exists and belongs to this user, reuse it (preserves conversation context).
+    // 3. If it doesn't exist OR doesn't belong to this user, create a new session.
+    // This handles Power Apps connector sending placeholder/stale session_id values.
+    let activeSessionId = null;
+
+    if (requestedSessionId) {
+      const { data: existingSession } = await supabase
+        .from('sessions')
+        .select('id, user_id')
+        .eq('id', requestedSessionId)
+        .maybeSingle();
+      if (existingSession && existingSession.user_id === userId) {
+        activeSessionId = existingSession.id;
+      }
+    }
+
     if (!activeSessionId) {
       const { data: newSession, error: sessionError } = await supabase
         .from('sessions')
@@ -152,12 +165,16 @@ router.post('/chat', async (req, res) => {
       { role: 'user', content: message }
     ];
 
-    // Save the user message
-    await supabase.from('messages').insert({
+    // Save the user message (with error check)
+    const { error: userInsertError } = await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'user',
       content: message,
     });
+    if (userInsertError) {
+      console.error('Failed to save user message:', userInsertError);
+      throw new Error(`Could not save user message: ${userInsertError.message}`);
+    }
 
     const queryEmbedding = await embed(message);
 
@@ -206,11 +223,14 @@ router.post('/chat', async (req, res) => {
       .map(block => block.text)
       .join('\n');
 
-    await supabase.from('messages').insert({
+    const { error: assistantInsertError } = await supabase.from('messages').insert({
       session_id: activeSessionId,
       role: 'assistant',
       content: responseText,
     });
+    if (assistantInsertError) {
+      console.error('Failed to save assistant message:', assistantInsertError);
+    }
 
     const citations = (libraryDocs || []).map(d => ({
       title: d.title,
@@ -292,7 +312,6 @@ router.get('/projects', async (req, res) => {
 });
 
 // ---- POST /api/copilot/projects ----
-// SVR-2: Creates a new project. Accepts module_id OR moduleId.
 router.post('/projects', async (req, res) => {
   const body = req.body || {};
   const email = body.email;
@@ -332,7 +351,6 @@ router.post('/projects', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions?email=X&project_id=Y ----
-// Accepts project_id OR projectId in query string
 router.get('/sessions', async (req, res) => {
   const { email } = req.query;
   const project_id = req.query.project_id || req.query.projectId;
@@ -357,7 +375,6 @@ router.get('/sessions', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions/:id/messages?email=X ----
-// SVR-1: Returns full message history for a session
 router.get('/sessions/:id/messages', async (req, res) => {
   const { id: sessionId } = req.params;
   const { email } = req.query;
