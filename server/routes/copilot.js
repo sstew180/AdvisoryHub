@@ -34,10 +34,6 @@ async function getUserByEmail(email) {
   return user;
 }
 
-// SVR-4: Rich system prompt assembly using preferenceMap blocks.
-// Identity, HardConstraints, and Quality blocks always apply (even in Direct mode).
-// WorkingStyle, VoiceMarkers, and LegacyPreferences are skipped when mode === 'direct'.
-// Project context, memories, library docs, and project docs are always included.
 function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDocs, mode }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
@@ -50,25 +46,20 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
 
-  // Always-applied blocks
   prompt += buildIdentityBlock(prefs);
   prompt += buildHardConstraintsBlock(prefs);
 
-  // Guided-only blocks
   if (isGuided) {
     prompt += buildWorkingStyleBlock(prefs);
     prompt += buildVoiceMarkersBlock(prefs);
   }
 
-  // Always-applied: quality flags are not style preferences
   prompt += buildQualityBlock(prefs);
 
-  // Guided-only: free-form preferences text
   if (isGuided) {
     prompt += buildLegacyPreferencesBlock(prefs);
   }
 
-  // Project context (always)
   if (project) {
     prompt += `\n\n## Active Project: ${project.name}`;
     if (project.description) prompt += `\n${project.description}`;
@@ -78,13 +69,11 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
     }
   }
 
-  // Memories (always)
   if (memories && memories.length > 0) {
     prompt += `\n\n## Relevant Past Context`;
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
   }
 
-  // Library docs (always)
   if (libraryDocs && libraryDocs.length > 0) {
     prompt += `\n\n## Relevant Frameworks and Guidance`;
     libraryDocs.forEach(d => {
@@ -94,7 +83,6 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
     });
   }
 
-  // Project docs (always)
   if (projectDocs && projectDocs.length > 0) {
     prompt += `\n\n## Relevant Project Documents`;
     projectDocs.forEach(d => {
@@ -107,9 +95,15 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
 }
 
 // ---- POST /api/copilot/chat ----
-// SVR-4: Now accepts mode ('guided' default, or 'direct' for unguided)
+// Accepts session_id OR sessionId (Power Apps connector may camelCase the body field)
+// Same for project_id OR projectId
 router.post('/chat', async (req, res) => {
-  const { email, message, session_id, project_id, mode } = req.body || {};
+  const body = req.body || {};
+  const email = body.email;
+  const message = body.message;
+  const session_id = body.session_id || body.sessionId;
+  const project_id = body.project_id || body.projectId;
+  const mode = body.mode;
 
   if (!email || !message) {
     return res.status(400).json({ error: 'email and message are required in the request body.' });
@@ -298,10 +292,14 @@ router.get('/projects', async (req, res) => {
 });
 
 // ---- POST /api/copilot/projects ----
-// SVR-2: Creates a new project for the user.
-// Body: { email, name, description?, objectives?, module_id? }
+// SVR-2: Creates a new project. Accepts module_id OR moduleId.
 router.post('/projects', async (req, res) => {
-  const { email, name, description, objectives, module_id } = req.body || {};
+  const body = req.body || {};
+  const email = body.email;
+  const name = body.name;
+  const description = body.description;
+  const objectives = body.objectives;
+  const module_id = body.module_id || body.moduleId;
 
   if (!email) {
     return res.status(400).json({ error: 'email is required in the body.' });
@@ -334,8 +332,10 @@ router.post('/projects', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions?email=X&project_id=Y ----
+// Accepts project_id OR projectId in query string
 router.get('/sessions', async (req, res) => {
-  const { email, project_id } = req.query;
+  const { email } = req.query;
+  const project_id = req.query.project_id || req.query.projectId;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
 
   try {
@@ -357,8 +357,7 @@ router.get('/sessions', async (req, res) => {
 });
 
 // ---- GET /api/copilot/sessions/:id/messages?email=X ----
-// SVR-1: Returns full message history for a session, ordered oldest first.
-// Verifies session ownership before returning content.
+// SVR-1: Returns full message history for a session
 router.get('/sessions/:id/messages', async (req, res) => {
   const { id: sessionId } = req.params;
   const { email } = req.query;
@@ -422,8 +421,6 @@ router.get('/library', async (req, res) => {
 });
 
 // ---- GET /api/copilot/modules?email=X ----
-// Returns the 12 tile-displayed modules with per-user accessibility flags.
-// Admin users see all modules as accessible regardless of user_modules grants.
 router.get('/modules', async (req, res) => {
   const { email } = req.query;
   if (!email) {
