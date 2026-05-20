@@ -280,6 +280,60 @@ router.get('/sessions', async (req, res) => {
   }
 });
 
+// ---- GET /api/copilot/sessions/:id/messages?email=X ----
+// Returns the full message history for a session, ordered oldest first.
+// Used by Power Apps to load a previous conversation when the user clicks
+// a session in the right-hand panel. Verifies session ownership before
+// returning content.
+router.get('/sessions/:id/messages', async (req, res) => {
+  const { id: sessionId } = req.params;
+  const { email } = req.query;
+
+  if (!email) {
+    return res.status(400).json({ error: 'email query parameter is required.' });
+  }
+  if (!sessionId) {
+    return res.status(400).json({ error: 'session id is required in the URL.' });
+  }
+
+  try {
+    const user = await getUserByEmail(email);
+
+    // Verify session belongs to this user before returning messages
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id, user_id, project_id, title')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError) throw sessionError;
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found.' });
+    }
+    if (session.user_id !== user.id) {
+      return res.status(403).json({ error: 'Session does not belong to this user.' });
+    }
+
+    const { data: messages, error: messagesError } = await supabase
+      .from('messages')
+      .select('id, role, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+
+    if (messagesError) throw messagesError;
+
+    res.json({
+      session_id: session.id,
+      project_id: session.project_id,
+      title: session.title,
+      messages: messages || [],
+    });
+  } catch (err) {
+    console.error('GetSessionMessages error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- GET /api/copilot/library ----
 router.get('/library', async (req, res) => {
   try {
