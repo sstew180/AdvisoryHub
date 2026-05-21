@@ -8,6 +8,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { marked } = require('marked');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
+const { generateAndSaveTitle } = require('../lib/generateTitle');
 
 const {
   effectivePreferences,
@@ -161,7 +162,11 @@ router.post('/chat', async (req, res) => {
     // 1. If requestedSessionId is provided, verify it exists in the sessions table.
     // 2. If it exists and belongs to this user, reuse it (preserves conversation context).
     // 3. If it doesn't exist OR doesn't belong to this user, create a new session.
+    // 4. SVR-5: track whether a fresh session was created so we can fire title
+    //    generation later. The crude slice-of-message title set at creation is
+    //    kept as a fallback in case AI title generation fails.
     let activeSessionId = null;
+    let isNewSession = false;
 
     if (requestedSessionId) {
       const { data: existingSession } = await supabase
@@ -175,6 +180,7 @@ router.post('/chat', async (req, res) => {
     }
 
     if (!activeSessionId) {
+      isNewSession = true;
       const { data: newSession, error: sessionError } = await supabase
         .from('sessions')
         .insert({
@@ -297,6 +303,20 @@ router.post('/chat', async (req, res) => {
     });
     if (assistantInsertError) {
       console.error('Failed to save assistant message:', assistantInsertError);
+    }
+
+    // =========================================================================
+    // SVR-5: trigger automatic title generation for newly created sessions.
+    // =========================================================================
+    // Fire-and-forget. The main response continues without waiting for the
+    // title to be generated. The promise is intentionally not awaited; the
+    // .catch handler logs any failure to Render logs without affecting the
+    // response that has already been built. If this fails entirely, the
+    // crude slice-of-message title set during session creation remains
+    // in place as a fallback.
+    if (isNewSession && responseText && responseText.trim().length > 0) {
+      generateAndSaveTitle(activeSessionId, message, responseText)
+        .catch(err => console.error('Background title generation error:', err.message));
     }
 
     const citations = (libraryDocs || []).map(d => ({
