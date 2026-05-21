@@ -22,6 +22,20 @@ const {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// =============================================================================
+// Retrieval thresholds (LIB-1: ported from AHP server/routes/chat.js)
+// =============================================================================
+// Two-tier retrieval. Project-scoped documents use a lower threshold so
+// project-specific content surfaces reliably even when phrasing differs.
+// The general library uses a higher threshold to avoid pulling in loosely
+// relevant frameworks. Both calls go to the same match_library RPC, which
+// requires p_user_id and p_project_id parameters.
+
+const PROJECT_THRESHOLD = 0.3;
+const LIBRARY_THRESHOLD = 0.55;
+const PROJECT_MATCH_COUNT = 6;
+const LIBRARY_MATCH_COUNT = 8;
+
 // Configure marked for the rendering Power Apps HtmlText control supports.
 // gfm gives line breaks on single newline; breaks ensures \n becomes <br>.
 marked.setOptions({
@@ -54,7 +68,7 @@ async function getUserByEmail(email) {
   return user;
 }
 
-function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDocs, mode }) {
+function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
 
@@ -103,20 +117,13 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, projectDoc
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
   }
 
+  // LIB-1: single merged section now carries both library and project docs.
   if (libraryDocs && libraryDocs.length > 0) {
-    prompt += `\n\n## Relevant Frameworks and Guidance`;
+    prompt += `\n\n## Relevant Frameworks, Guidance and Project Documents`;
     libraryDocs.forEach(d => {
       prompt += `\n\n### ${d.title}`;
       prompt += `\n${d.content.slice(0, 8000)}`;
       if (d.source_url) prompt += `\nSource: ${d.source_url}`;
-    });
-  }
-
-  if (projectDocs && projectDocs.length > 0) {
-    prompt += `\n\n## Relevant Project Documents`;
-    projectDocs.forEach(d => {
-      prompt += `\n\n### ${d.filename}`;
-      prompt += `\n${d.content.slice(0, 8000)}`;
     });
   }
 
@@ -213,21 +220,52 @@ router.post('/chat', async (req, res) => {
       match_count: 3,
     });
 
-    const { data: libraryDocs } = await supabase.rpc('match_library', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.7,
-      match_count: 5,
-    });
+    // =========================================================================
+    // LIB-1: Two-tier library retrieval (ported from AHP server/routes/chat.js)
+    // =========================================================================
+    // 1. Project-scoped retrieval (lower threshold) when a project is active.
+    //    Filtered to records whose project_id matches; library items returned
+    //    by this call are dropped here and picked up by the general call below.
+    // 2. General library retrieval (higher threshold). Passes p_project_id: null
+    //    so the RPC returns library items only.
+    // 3. Dedup by id. Project-scoped results come first so they win the dedup
+    //    when the same id appears in both result sets.
+    // 4. Both calls log errors via console.error rather than silently swallowing.
 
-    let projectDocs = [];
+    let projectScopedDocs = [];
     if (project_id) {
-      const { data } = await supabase.rpc('match_documents', {
+      const { data, error } = await supabase.rpc('match_library', {
         query_embedding: queryEmbedding,
-        match_project_id: project_id,
-        match_threshold: 0.7,
-        match_count: 3,
+        match_threshold: PROJECT_THRESHOLD,
+        match_count: PROJECT_MATCH_COUNT,
+        p_user_id: userId,
+        p_project_id: project_id,
       });
-      projectDocs = data || [];
+      if (error) {
+        console.error('Project-scoped retrieval error:', error);
+      } else {
+        projectScopedDocs = (data || []).filter(d => d.project_id === project_id);
+      }
+    }
+
+    const { data: libraryHits, error: libraryError } = await supabase.rpc('match_library', {
+      query_embedding: queryEmbedding,
+      match_threshold: LIBRARY_THRESHOLD,
+      match_count: LIBRARY_MATCH_COUNT,
+      p_user_id: userId,
+      p_project_id: null,
+    });
+    if (libraryError) {
+      console.error('Library retrieval error:', libraryError);
+    }
+
+    const seen = new Set();
+    const libraryDocs = [];
+    for (const d of [...(projectScopedDocs || []), ...(libraryHits || [])]) {
+      if (d && d.id && !seen.has(d.id)) {
+        seen.add(d.id);
+        libraryDocs.push(d);
+      }
     }
 
     const systemPrompt = buildSystemPrompt({
@@ -235,7 +273,6 @@ router.post('/chat', async (req, res) => {
       project,
       memories,
       libraryDocs,
-      projectDocs,
       mode,
     });
 
