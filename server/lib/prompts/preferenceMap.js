@@ -1,7 +1,9 @@
 // =============================================================================
 // preferenceMap.js
 // =============================================================================
-// Card #258 (Phase 1 Sprint 2)
+// Card #258 (Phase 1 Sprint 2). Updated PROF-1 Phase A 21 May 2026:
+// INSTRUCTIONS.default_artefact dictionary now keyed by the seven controlled
+// snake_case keys the Power Apps profile dropdown writes.
 //
 // Translates structured preference column values from the profiles table
 // into system prompt instructions. Project-level overrides are merged on
@@ -156,27 +158,39 @@ const INSTRUCTIONS = {
       "the top of your response so the user can correct any that are wrong."
   },
 
+  // PROF-1 Phase A (21 May 2026): replaced the six legacy aspirational keys
+  // (briefing_note, email, memo, report, bullet_summary, board_paper) with
+  // the seven controlled keys the Power Apps profile dropdown now writes.
   default_artefact: {
+    analysis_summary:
+      "When the artefact type is not specified, default to an analysis and " +
+      "investigations summary format: scope and approach stated up front, findings " +
+      "organised by theme or risk, supporting evidence cited inline, conclusions " +
+      "clearly distinguished from findings, limitations of the analysis noted.",
     briefing_note:
       "When the artefact type is not specified, default to a briefing note format: " +
       "short executive summary, key points, recommendation, next steps.",
-    email:
-      "When the artefact type is not specified, default to an email format: " +
-      "appropriate opening, body in short paragraphs, clear next step.",
-    memo:
-      "When the artefact type is not specified, default to a memo format: dense " +
-      "paragraphs, financial ranges where relevant, approving authority noted where " +
-      "appropriate.",
-    report:
-      "When the artefact type is not specified, default to a report format: sections " +
-      "with headings, supporting evidence, conclusions and recommendations.",
-    bullet_summary:
-      "When the artefact type is not specified, default to a bullet summary: concise " +
-      "points, no narrative padding.",
-    board_paper:
-      "When the artefact type is not specified, default to a board paper format: " +
-      "purpose, background, options analysis with risks, recommendation, decision " +
-      "sought."
+    governance_paper:
+      "When the artefact type is not specified, default to a governance group paper " +
+      "format: purpose, background, options considered with assessment criteria, " +
+      "recommendation, decision sought, risks and mitigations.",
+    formal_email:
+      "When the artefact type is not specified, default to a formal email format: " +
+      "clear subject line, formal salutation, concise body in short paragraphs, " +
+      "single clear request or next step, professional sign-off.",
+    options_analysis:
+      "When the artefact type is not specified, default to an options analysis " +
+      "format: problem statement, assessment criteria, options described with pros " +
+      "and cons against each criterion, comparison summary, preferred option with " +
+      "reasoning.",
+    meeting_notes:
+      "When the artefact type is not specified, default to a meeting notes format: " +
+      "date and attendees, agenda items as headings, key points and decisions under " +
+      "each, actions with named owners and due dates.",
+    status_report:
+      "When the artefact type is not specified, default to a program status report " +
+      "format: status summary (RAG or equivalent), achievements this period, " +
+      "planned work next period, risks and issues, decisions and escalations required."
   },
 
   pushback_explicitness: {
