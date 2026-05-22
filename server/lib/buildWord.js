@@ -179,6 +179,7 @@ async function buildScratchDocument(input) {
 
 /**
  * Sanitise + truncate a title into a filesystem-safe filename.
+ * Used for the unique STORAGE path (slug + timestamp), not the download name.
  */
 function safeFilename(title) {
   const base = (title || 'document')
@@ -189,6 +190,31 @@ function safeFilename(title) {
     .slice(0, 50) || 'document';
   const stamp = Date.now().toString(36);
   return `${base}-${stamp}.docx`;
+}
+
+/**
+ * Build a clean, human-readable download filename from the document title.
+ * This is the name the browser saves the file as (OUT-6). It keeps spaces and
+ * normal capitalisation, only stripping characters that are illegal in a
+ * filename, so a title like "Procurement Threshold Review" becomes
+ * "Procurement Threshold Review.docx".
+ *
+ * The unique storage path is still produced by safeFilename(); this function
+ * is only for the friendly download name.
+ *
+ * @param {string} title
+ * @returns {string}
+ */
+function friendlyFilename(title) {
+  const base =
+    (typeof title === 'string' && title.trim() ? title.trim() : 'document')
+      // Remove characters that are illegal in Windows/macOS filenames.
+      .replace(/[\\/:*?"<>|]/g, ' ')
+      // Collapse any whitespace runs to a single space.
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 100) || 'document';
+  return `${base}.docx`;
 }
 
 // -----------------------------------------------------------------------------
@@ -243,4 +269,4 @@ function normaliseSection(raw) {
 const WORD_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-module.exports = { buildWordDocument, safeFilename, WORD_MIME };
+module.exports = { buildWordDocument, safeFilename, friendlyFilename, WORD_MIME };
