@@ -924,7 +924,16 @@ router.get('/sessions/:id/messages', async (req, res) => {
     const messagesWithHtml = await Promise.all((messages || []).map(async m => {
       let document_url = null;
       if (m.document_path) {
-        document_url = await signExistingFile(m.document_path, m.document_filename);
+        try {
+          // signExistingFile returns { signedUrl, storagePath }; persist only
+          // the URL string. Wrapped in try/catch so one unsignable file yields
+          // no download button instead of failing the whole session load.
+          const signed = await signExistingFile(m.document_path, m.document_filename);
+          document_url = signed.signedUrl;
+        } catch (signErr) {
+          console.error('Re-sign failed for', m.document_path, signErr.message);
+          document_url = null;
+        }
       }
       return {
         id: m.id,
