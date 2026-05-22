@@ -9,6 +9,8 @@ const { marked } = require('marked');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const { generateAndSaveTitle } = require('../lib/generateTitle');
+const { buildWordDocument, safeFilename, WORD_MIME } = require('../lib/buildWord');
+const { uploadAndSign } = require('../lib/storage');
 
 const {
   effectivePreferences,
@@ -58,6 +60,273 @@ function toHtml(markdownText) {
   }
 }
 
+// =============================================================================
+// PROF-1 Phase C: document creation tool
+// =============================================================================
+// AHC now exposes the same create_word_document capability as AHP, wired to
+// all seven Gold Coast templates. Because Power Apps consumes a single JSON
+// response (not a stream), the tool loop here is non-streaming: call Claude,
+// if it requests the tool, run it, feed the result back, call again, until
+// Claude returns a final text answer.
+
+const TOOLS = [
+  {
+    name: 'create_word_document',
+    description:
+      'Create a downloadable Microsoft Word document (.docx). Use this tool ' +
+      'when the user requests a finished, formal deliverable they would expect ' +
+      'to download and edit (briefing note, analysis, governance/council paper, ' +
+      'status report, meeting minutes, options analysis, or a formal email). ' +
+      'Do NOT use it for short answers, explanations, brainstorming, or casual ' +
+      'discussion. When the request is ambiguous (could be a chat answer or a ' +
+      'document), briefly ask the user which they want before calling the tool. ' +
+      '\n\n' +
+      'Always set the template that matches the request:\n' +
+      '- briefing_note: a briefing note directed at a recipient (uses To, From, Action by). Always use this for any briefing note.\n' +
+      '- analysis_summary: a self-driven analysis or review of a question, no formal recipient.\n' +
+      '- governance_paper: a paper for a council meeting, board, or committee, put forward for noting, endorsement, or decision.\n' +
+      '- status_report: a periodic update on a function, program, or initiative, defined by a period covered.\n' +
+      '- meeting_notes: minutes of a meeting (attendees, apologies, agenda items with discussion, decisions, actions).\n' +
+      '- options_analysis: a comparison of two or more options against criteria to inform a decision.\n' +
+      '- formal_email: a polished email (salutation, body, sign-off, signature).\n\n' +
+      'Populate metadata from the user profile where natural (e.g. author or from = the user\'s name and role). Ask the user for fields you cannot infer; do not invent file numbers or references. Accept blank optional fields. ' +
+      '\n\n' +
+      'After the tool runs you receive a download URL. Include it in your reply ' +
+      'to the user as a Markdown link so they can download the document.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description:
+            'The document title. Specific and descriptive, e.g. ' +
+            '"Procurement Threshold Review for FY2026".',
+        },
+        template: {
+          type: 'string',
+          enum: [
+            'briefing_note',
+            'analysis_summary',
+            'governance_paper',
+            'status_report',
+            'meeting_notes',
+            'options_analysis',
+            'formal_email',
+          ],
+          description: 'Which template to use. Required. Pick the best match for the request.',
+        },
+        metadata: {
+          type: 'object',
+          description:
+            'Metadata fields. Which apply depends on the template; fill the ' +
+            'relevant ones and omit the rest.',
+          properties: {
+            to:             { type: 'string', description: 'Recipient (briefing_note) or meeting body (governance_paper) or addressee (formal_email).' },
+            copy:           { type: 'string', description: 'Carbon copy. briefing_note.' },
+            from:           { type: 'string', description: 'Author/sender. briefing_note, formal_email. Use the user name and role.' },
+            action_by:      { type: 'string', description: 'Action owner or deadline. briefing_note.' },
+            subject:        { type: 'string', description: 'Subject line. briefing_note, analysis_summary, formal_email. Defaults to title.' },
+            date:           { type: 'string', description: 'Date. briefing_note, analysis_summary, options_analysis. Defaults to today.' },
+            file_no:        { type: 'string', description: 'File reference. briefing_note.' },
+            author:         { type: 'string', description: 'Author name and role. analysis_summary, governance_paper, status_report, options_analysis.' },
+            reference:      { type: 'string', description: 'Document or file reference. analysis_summary, governance_paper, status_report, options_analysis, meeting_notes.' },
+            title:          { type: 'string', description: 'Prominent title for governance_paper, status_report, meeting_notes, options_analysis. Defaults to the top-level title.' },
+            meeting_date:   { type: 'string', description: 'Meeting date. governance_paper.' },
+            decision_type:  { type: 'string', description: 'For Noting, For Endorsement, or For Decision. governance_paper.' },
+            period_covered: { type: 'string', description: 'Reporting period, e.g. "1 May 2026 - 31 May 2026". status_report.' },
+            date_prepared:  { type: 'string', description: 'Date prepared. status_report.' },
+            time:           { type: 'string', description: 'Meeting time. meeting_notes.' },
+            location:       { type: 'string', description: 'Meeting location. meeting_notes.' },
+            chair:          { type: 'string', description: 'Meeting chair. meeting_notes.' },
+            minute_taker:   { type: 'string', description: 'Minute taker. meeting_notes.' },
+            decision_sought:{ type: 'string', description: 'The decision the paper informs. options_analysis.' },
+          },
+        },
+        sections: {
+          type: 'array',
+          description:
+            'Body sections for the section-shaped templates (briefing_note, ' +
+            'analysis_summary, governance_paper, status_report, options_analysis). ' +
+            'Each section has a heading and content. Plain text, no markdown.',
+          items: {
+            type: 'object',
+            properties: {
+              heading:    { type: 'string', description: 'Section heading.' },
+              level:      { type: 'integer', enum: [1, 2, 3], description: 'Heading level for the scratch builder only; ignored by templates.' },
+              paragraphs: { type: 'array', items: { type: 'string' }, description: 'Body paragraphs. Plain text.' },
+              bullets:    { type: 'array', items: { type: 'string' }, description: 'Bullet list items. No bullet character.' },
+            },
+            required: ['heading'],
+          },
+        },
+        options: {
+          type: 'array',
+          description: 'Options for options_analysis. Each has a name, description, strengths, weaknesses.',
+          items: {
+            type: 'object',
+            properties: {
+              name:        { type: 'string' },
+              description: { type: 'string' },
+              strengths:   { type: 'array', items: { type: 'string' } },
+              weaknesses:  { type: 'array', items: { type: 'string' } },
+            },
+            required: ['name'],
+          },
+        },
+        attendees: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Attendee names. meeting_notes only.',
+        },
+        apologies: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Apology names. meeting_notes only.',
+        },
+        agenda_items: {
+          type: 'array',
+          description: 'Agenda items. meeting_notes only.',
+          items: {
+            type: 'object',
+            properties: {
+              topic:      { type: 'string' },
+              discussion: { type: 'array', items: { type: 'string' } },
+              decisions:  { type: 'array', items: { type: 'string' } },
+              actions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    action:   { type: 'string' },
+                    owner:    { type: 'string' },
+                    due_date: { type: 'string' },
+                  },
+                  required: ['action'],
+                },
+              },
+            },
+            required: ['topic'],
+          },
+        },
+        salutation:      { type: 'string', description: 'Greeting, e.g. "Dear Sarah,". formal_email only.' },
+        body_paragraphs: { type: 'array', items: { type: 'string' }, description: 'Email body paragraphs. formal_email only.' },
+        signoff:         { type: 'string', description: 'Sign-off, e.g. "Kind regards,". formal_email only.' },
+        signature:      { type: 'array', items: { type: 'string' }, description: 'Signature block lines (name, role, organisation, contact). formal_email only.' },
+        subtitle:        { type: 'string', description: 'Subtitle for the scratch builder (no template). Ignored by templates.' },
+        organisation:    { type: 'string', description: 'Organisation for the scratch builder (no template). Ignored by templates.' },
+      },
+      required: ['title', 'template'],
+    },
+  },
+];
+
+// Safety net: if Claude forgets to set the template but the title clearly
+// describes a briefing note, set it. Mirrors the AHP backstop.
+const BRIEFING_NOTE_PATTERN = /\bbriefing\s*note\b/i;
+
+function applyTemplateBackstop(input) {
+  if (!input || typeof input !== 'object') return input;
+  if (input.template) return input;
+  const title = typeof input.title === 'string' ? input.title : '';
+  if (BRIEFING_NOTE_PATTERN.test(title)) {
+    return { ...input, template: 'briefing_note' };
+  }
+  return input;
+}
+
+// Execute the document tool: build the .docx, upload it, return a download URL.
+async function executeCreateWordDocument(rawInput, { userId, sessionId }) {
+  const input = applyTemplateBackstop(rawInput);
+  const title = (input && input.title) || 'document';
+
+  const buffer = await buildWordDocument(input);
+  const filename = safeFilename(title);
+  const storagePath = `${userId}/${sessionId}/${filename}`;
+  const { signedUrl } = await uploadAndSign(buffer, storagePath, WORD_MIME);
+
+  const message =
+    `Document created successfully.\n` +
+    `Title: ${title}\n` +
+    `Filename: ${filename}\n` +
+    `Template: ${input && input.template ? input.template : 'none (scratch build)'}\n` +
+    `Download URL: ${signedUrl}\n\n` +
+    `Provide this URL to the user as a Markdown link, formatted exactly like ` +
+    `[${filename}](${signedUrl}), then briefly confirm the document is ready ` +
+    `and offer revisions. Keep the surrounding text short.`;
+
+  return { signedUrl, filename, message };
+}
+
+// Non-streaming tool loop. Returns the final assistant text plus, if a
+// document was created, its URL and filename.
+async function runWithTools({ baseParams, context, maxRounds = 3 }) {
+  let currentMessages = baseParams.messages;
+  let documentUrl = null;
+  let documentFilename = null;
+
+  for (let round = 0; round < maxRounds; round++) {
+    const response = await anthropic.messages.create({
+      ...baseParams,
+      messages: currentMessages,
+    });
+
+    if (response.stop_reason !== 'tool_use') {
+      const text = response.content
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n');
+      return { text, documentUrl, documentFilename };
+    }
+
+    const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+    const toolResults = [];
+
+    for (const toolUse of toolUseBlocks) {
+      if (toolUse.name === 'create_word_document') {
+        try {
+          const result = await executeCreateWordDocument(toolUse.input, context);
+          documentUrl = result.signedUrl;
+          documentFilename = result.filename;
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: result.message,
+          });
+        } catch (err) {
+          console.error('create_word_document error:', err);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            is_error: true,
+            content: `Failed to create the document: ${err.message}`,
+          });
+        }
+      } else {
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          is_error: true,
+          content: `Unknown tool: ${toolUse.name}`,
+        });
+      }
+    }
+
+    currentMessages = [
+      ...currentMessages,
+      { role: 'assistant', content: response.content },
+      { role: 'user', content: toolResults },
+    ];
+  }
+
+  return {
+    text:
+      'I was not able to finish creating the document within the allowed number ' +
+      'of steps. Please try again, or ask me to simplify the document.',
+    documentUrl,
+    documentFilename,
+  };
+}
+
 async function getUserByEmail(email) {
   const { data, error } = await supabase.auth.admin.listUsers();
   if (error) throw new Error(`Auth lookup failed: ${error.message}`);
@@ -80,6 +349,26 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
     'drawing on best practice frameworks, Queensland legislation, and ' +
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
+
+  // Document creation guidance (PROF-1 Phase C).
+  prompt +=
+    '\n\n## Document Creation\n' +
+    'You can create downloadable Microsoft Word documents using the ' +
+    'create_word_document tool. Use it when the user requests a finished, ' +
+    'formal deliverable they would download and edit. Do not use it for short ' +
+    'answers, explanations, or casual discussion. When the request is ' +
+    'ambiguous, briefly ask the user whether they want a document before ' +
+    'calling the tool. After the tool runs you receive a download URL which ' +
+    'you must surface to the user as a Markdown link in your reply.\n\n' +
+    'Match the template to the request: briefing_note (recipient-directed ' +
+    'brief, always use this for briefing notes), analysis_summary (self-driven ' +
+    'analysis), governance_paper (council/committee paper for noting, ' +
+    'endorsement, or decision), status_report (periodic update over a defined ' +
+    'period), meeting_notes (minutes with attendees, agenda items, decisions, ' +
+    'actions), options_analysis (comparison of options against criteria), and ' +
+    'formal_email (salutation, body, sign-off, signature). Populate metadata ' +
+    'from the user profile where natural and ask for fields you cannot infer ' +
+    'rather than inventing them.';
 
   // Personalisation: address the user by their first name where natural
   if (profile && profile.first_name) {
@@ -282,17 +571,19 @@ router.post('/chat', async (req, res) => {
       mode,
     });
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: messagesForClaude,
+    // PROF-1 Phase C: run through the non-streaming tool loop so Claude can
+    // create documents when asked. For ordinary chat (no tool call) this
+    // returns on the first round with documentUrl null.
+    const { text: responseText, documentUrl, documentFilename } = await runWithTools({
+      baseParams: {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8192, // raised from 2048 so full documents fit in one tool call
+        system: systemPrompt,
+        tools: TOOLS,
+        messages: messagesForClaude,
+      },
+      context: { userId, sessionId: activeSessionId },
     });
-
-    const responseText = response.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
 
     const responseHtml = toHtml(responseText);
 
@@ -329,6 +620,8 @@ router.post('/chat', async (req, res) => {
       response_text: responseText,
       response_html: responseHtml,
       session_id: activeSessionId,
+      document_url: documentUrl,           // PROF-1 Phase C: null unless a document was created
+      document_filename: documentFilename, // PROF-1 Phase C: null unless a document was created
       citations,
       domain_pack: profile?.service_area || 'General',
       high_scrutiny_active: profile?.high_scrutiny || false,

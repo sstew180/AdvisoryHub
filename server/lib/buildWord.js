@@ -21,7 +21,16 @@ const {
   HeadingLevel,
   AlignmentType,
 } = require('docx');
-const { buildBriefingNote, TEMPLATES } = require('./buildWordFromTemplate');
+const {
+  buildBriefingNote,
+  buildAnalysisSummary,
+  buildGovernancePaper,
+  buildStatusReport,
+  buildMeetingNotes,
+  buildOptionsAnalysis,
+  buildFormalEmail,
+  TEMPLATES,
+} = require('./buildWordFromTemplate');
 
 /**
  * Top-level builder. Routes to template-based or scratch implementation
@@ -33,16 +42,21 @@ const { buildBriefingNote, TEMPLATES } = require('./buildWordFromTemplate');
 async function buildWordDocument(input) {
   const templateName = input && typeof input.template === 'string' ? input.template : null;
 
-  if (templateName === 'briefing_note') {
-    return buildBriefingNote(input);
+  switch (templateName) {
+    case 'briefing_note':    return buildBriefingNote(input);
+    case 'analysis_summary': return buildAnalysisSummary(input);
+    case 'governance_paper': return buildGovernancePaper(input);
+    case 'status_report':    return buildStatusReport(input);
+    case 'meeting_notes':    return buildMeetingNotes(input);
+    case 'options_analysis': return buildOptionsAnalysis(input);
+    case 'formal_email':     return buildFormalEmail(input);
+    default:
+      // Unknown template name: fall back to scratch build but log a warning.
+      if (templateName && !(templateName in TEMPLATES)) {
+        console.warn(`buildWordDocument: unknown template '${templateName}', using scratch build`);
+      }
+      return buildScratchDocument(input);
   }
-
-  // Unknown template name: fall back to scratch build but log a warning.
-  if (templateName && !(templateName in TEMPLATES)) {
-    console.warn(`buildWordDocument: unknown template '${templateName}', using scratch build`);
-  }
-
-  return buildScratchDocument(input);
 }
 
 // -----------------------------------------------------------------------------
