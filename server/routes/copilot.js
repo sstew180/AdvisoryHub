@@ -9,6 +9,7 @@ const { marked } = require('marked');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const { generateAndSaveTitle } = require('../lib/generateTitle');
+const { summariseSession } = require('../lib/summariseSession');
 const { buildWordDocument, safeFilename, WORD_MIME } = require('../lib/buildWord');
 const { uploadAndSign } = require('../lib/storage');
 
@@ -609,6 +610,19 @@ router.post('/chat', async (req, res) => {
       generateAndSaveTitle(activeSessionId, message, responseText)
         .catch(err => console.error('Background title generation error:', err.message));
     }
+
+    // =========================================================================
+    // SVR-6: summarise + embed every 10 messages for cross-session recall.
+    // =========================================================================
+    // Fire-and-forget, mirroring SVR-5 above. summariseSession self-checks the
+    // session's saved message count and only does work when it has just crossed
+    // a multiple of 10 messages; otherwise it returns immediately. The promise
+    // is intentionally not awaited so it never delays the response, and any
+    // failure is logged to Render logs without affecting the reply already
+    // built. The summary it writes is consumed by the match_sessions retrieval
+    // earlier in this handler on future turns and in future sessions.
+    summariseSession(activeSessionId, userId)
+      .catch(err => console.error('Background session summary error:', err.message));
 
     const citations = (libraryDocs || []).map(d => ({
       title: d.title,
