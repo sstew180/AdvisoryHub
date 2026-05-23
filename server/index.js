@@ -25,6 +25,7 @@ app.use('/api/modules', require('./routes/modules'));
 app.use('/api/suggest-prompts', require('./routes/suggestPrompts'));
 app.use('/api/generate-style', require('./routes/generateStyle'));
 app.use('/api/copilot', copilotAuth, require('./routes/copilot'));
+app.use('/api/copilot', copilotAuth, require('./routes/copilotSuggest'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => console.log(`AdvisoryHub API running on port ${PORT}`));
