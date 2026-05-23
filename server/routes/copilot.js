@@ -49,12 +49,26 @@ marked.setOptions({
   mangle: false,
 });
 
+// Inline styles injected into marked's table output so the Power Apps HtmlText
+// control shows borders, padded cells and a shaded header. HtmlText is most
+// reliable with per-element inline styles rather than a stylesheet.
+function styleTables(html) {
+  if (!html || html.indexOf('<table') === -1) return html;
+  const tableStyle = 'border-collapse:collapse;width:100%;margin:10px 0;font-size:14px;';
+  const headStyle = 'border:1px solid #B9CDD1;padding:7px 10px;text-align:left;background-color:#0F6E78;color:#FFFFFF;font-weight:bold;';
+  const cellStyle = 'border:1px solid #B9CDD1;padding:7px 10px;text-align:left;vertical-align:top;';
+  return html
+    .replace(/<table(\s[^>]*)?>/g, (m, attrs) => `<table${attrs || ''} style="${tableStyle}">`)
+    .replace(/<th(\s[^>]*)?>/g, (m, attrs) => `<th${attrs || ''} style="${headStyle}">`)
+    .replace(/<td(\s[^>]*)?>/g, (m, attrs) => `<td${attrs || ''} style="${cellStyle}">`);
+}
+
 // Helper: convert markdown text to HTML for clients that render HTML (Power Apps).
 // Returns empty string if input is empty/null.
 function toHtml(markdownText) {
   if (!markdownText) return '';
   try {
-    return marked.parse(markdownText);
+    return styleTables(marked.parse(markdownText));
   } catch (err) {
     console.error('Markdown render failed, returning raw text:', err);
     return markdownText;
