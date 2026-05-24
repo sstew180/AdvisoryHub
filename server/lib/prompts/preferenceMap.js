@@ -223,6 +223,23 @@ const INSTRUCTIONS = {
     fresh_per_session:
       "Treat each session as fresh. Do not draw on prior sessions unless the user " +
       "explicitly references them."
+  },
+
+  // ADP-2 (24 May 2026): consumer for the writing-style wizard question 5
+  // ("Should the AI suggest next steps at the end of a response?"). Read
+  // automatically by buildWorkingStyleBlock, which loops the INSTRUCTIONS keys.
+  next_steps: {
+    always:
+      "End substantive responses with a short next-steps section: the specific " +
+      "actions the user should take next, in priority order. Include this even " +
+      "when not explicitly asked.",
+    when_useful:
+      "Suggest next steps only where there is a clear, useful action the user " +
+      "may not have considered. Do not append next steps to every response or " +
+      "state the obvious.",
+    never:
+      "Do not suggest next steps or what to do next. Answer the question asked " +
+      "and stop. The user will ask if they want follow-up actions."
   }
 
 };

@@ -9,9 +9,8 @@ const { marked } = require('marked');
 const supabase = require('../lib/supabase');
 const { embed } = require('../lib/embed');
 const { generateAndSaveTitle } = require('../lib/generateTitle');
-const { summariseSession } = require('../lib/summariseSession');
-const { buildWordDocument, safeFilename, friendlyFilename, WORD_MIME } = require('../lib/buildWord');
-const { uploadAndSign, signExistingFile } = require('../lib/storage');
+const { buildWordDocument, safeFilename, WORD_MIME } = require('../lib/buildWord');
+const { uploadAndSign } = require('../lib/storage');
 
 const {
   effectivePreferences,
@@ -49,26 +48,12 @@ marked.setOptions({
   mangle: false,
 });
 
-// Inline styles injected into marked's table output so the Power Apps HtmlText
-// control shows borders, padded cells and a shaded header. HtmlText is most
-// reliable with per-element inline styles rather than a stylesheet.
-function styleTables(html) {
-  if (!html || html.indexOf('<table') === -1) return html;
-  const tableStyle = 'border-collapse:collapse;width:100%;margin:10px 0;font-size:14px;';
-  const headStyle = 'border:1px solid #B9CDD1;padding:7px 10px;text-align:left;background-color:#0F6E78;color:#FFFFFF;font-weight:bold;';
-  const cellStyle = 'border:1px solid #B9CDD1;padding:7px 10px;text-align:left;vertical-align:top;';
-  return html
-    .replace(/<table(\s[^>]*)?>/g, (m, attrs) => `<table${attrs || ''} style="${tableStyle}">`)
-    .replace(/<th(\s[^>]*)?>/g, (m, attrs) => `<th${attrs || ''} style="${headStyle}">`)
-    .replace(/<td(\s[^>]*)?>/g, (m, attrs) => `<td${attrs || ''} style="${cellStyle}">`);
-}
-
 // Helper: convert markdown text to HTML for clients that render HTML (Power Apps).
 // Returns empty string if input is empty/null.
 function toHtml(markdownText) {
   if (!markdownText) return '';
   try {
-    return styleTables(marked.parse(markdownText));
+    return marked.parse(markdownText);
   } catch (err) {
     console.error('Markdown render failed, returning raw text:', err);
     return markdownText;
@@ -255,28 +240,21 @@ async function executeCreateWordDocument(rawInput, { userId, sessionId }) {
   const title = (input && input.title) || 'document';
 
   const buffer = await buildWordDocument(input);
-
-  // OUT-6: slugged + timestamped name for the unique storage path (prevents
-  // overwrites), plus a clean human-readable name the browser saves the file
-  // as (set on the signed URL).
-  const storageFilename = safeFilename(title);
-  const downloadName = friendlyFilename(title);
-  const storagePath = `${userId}/${sessionId}/${storageFilename}`;
-  const { signedUrl } = await uploadAndSign(buffer, storagePath, WORD_MIME, downloadName);
+  const filename = safeFilename(title);
+  const storagePath = `${userId}/${sessionId}/${filename}`;
+  const { signedUrl } = await uploadAndSign(buffer, storagePath, WORD_MIME);
 
   const message =
     `Document created successfully.\n` +
     `Title: ${title}\n` +
-    `Filename: ${downloadName}\n` +
+    `Filename: ${filename}\n` +
     `Template: ${input && input.template ? input.template : 'none (scratch build)'}\n` +
     `Download URL: ${signedUrl}\n\n` +
     `Provide this URL to the user as a Markdown link, formatted exactly like ` +
-    `[${downloadName}](${signedUrl}), then briefly confirm the document is ready ` +
+    `[${filename}](${signedUrl}), then briefly confirm the document is ready ` +
     `and offer revisions. Keep the surrounding text short.`;
 
-  // OUT-5: storagePath is returned so the handler can persist it on the message
-  // row and re-sign the link when the session is resumed later.
-  return { signedUrl, filename: downloadName, storagePath, message };
+  return { signedUrl, filename, message };
 }
 
 // Non-streaming tool loop. Returns the final assistant text plus, if a
@@ -285,7 +263,6 @@ async function runWithTools({ baseParams, context, maxRounds = 3 }) {
   let currentMessages = baseParams.messages;
   let documentUrl = null;
   let documentFilename = null;
-  let documentStoragePath = null;
 
   for (let round = 0; round < maxRounds; round++) {
     const response = await anthropic.messages.create({
@@ -298,7 +275,7 @@ async function runWithTools({ baseParams, context, maxRounds = 3 }) {
         .filter(b => b.type === 'text')
         .map(b => b.text)
         .join('\n');
-      return { text, documentUrl, documentFilename, documentStoragePath };
+      return { text, documentUrl, documentFilename };
     }
 
     const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
@@ -310,7 +287,6 @@ async function runWithTools({ baseParams, context, maxRounds = 3 }) {
           const result = await executeCreateWordDocument(toolUse.input, context);
           documentUrl = result.signedUrl;
           documentFilename = result.filename;
-          documentStoragePath = result.storagePath;
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -348,7 +324,6 @@ async function runWithTools({ baseParams, context, maxRounds = 3 }) {
       'of steps. Please try again, or ask me to simplify the document.',
     documentUrl,
     documentFilename,
-    documentStoragePath,
   };
 }
 
@@ -363,80 +338,7 @@ async function getUserByEmail(email) {
   return user;
 }
 
-// =============================================================================
-// CHT-2: per-message rules (Length, Format, Depth, Type)
-// =============================================================================
-// The Power Apps prompt-options bar sends a `rules` object on the chat call.
-// These apply to a single response and override the profile defaults where
-// they conflict. Type drives the document templates: selecting a document
-// type locks that template when a document is produced. "general" (the
-// default) means ordinary chat with no forced document.
-
-const LENGTH_RULES = {
-  brief: 'Length: brief. Use the shortest length that still fully answers the question.',
-  standard: 'Length: standard.',
-  detailed: 'Length: detailed and comprehensive.',
-};
-
-const FORMAT_RULES = {
-  prose: 'Format: prose paragraphs only. No bullet lists or tables.',
-  structured: 'Format: structured, using short headed sections.',
-  bullets: 'Format: lead with bullet points for the main content.',
-  table: 'Format: present the core content as a table wherever it fits.',
-};
-
-const DEPTH_RULES = {
-  summary: 'Depth: summary level. Key points only.',
-  analysis: 'Depth: analytical. Give reasoning and implications, not just a summary.',
-  full_recs: 'Depth: full analysis ending with clear, actionable recommendations.',
-  critical: 'Depth: critical and challenging. Stress-test assumptions and surface weaknesses and risks.',
-};
-
-// Type maps to the seven document templates. "general" forces nothing.
-const TYPE_LABELS = {
-  briefing_note: 'Briefing note',
-  analysis_summary: 'Analysis summary',
-  governance_paper: 'Governance paper',
-  status_report: 'Status report',
-  meeting_notes: 'Meeting notes',
-  options_analysis: 'Options analysis',
-  formal_email: 'Formal email',
-};
-
-function buildPerMessageRulesBlock(rules) {
-  if (!rules || typeof rules !== 'object') return '';
-
-  const norm = v => (typeof v === 'string' ? v.trim().toLowerCase() : '');
-  const length = norm(rules.length);
-  const format = norm(rules.format);
-  const depth = norm(rules.depth);
-  const type = norm(rules.type);
-
-  const lines = [];
-  if (LENGTH_RULES[length]) lines.push(LENGTH_RULES[length]);
-  if (FORMAT_RULES[format]) lines.push(FORMAT_RULES[format]);
-  if (DEPTH_RULES[depth]) lines.push(DEPTH_RULES[depth]);
-
-  // Type drives the document template. "general" or empty forces no document.
-  if (type && type !== 'general' && TYPE_LABELS[type]) {
-    lines.push(
-      `Document type: ${TYPE_LABELS[type]}. The user has pre-selected this document ` +
-      `type. If this response involves producing a document, you MUST create it with ` +
-      `the create_word_document tool using template "${type}". If the user is only ` +
-      `asking a question, answer normally without creating a document.`
-    );
-  }
-
-  if (lines.length === 0) return '';
-  return (
-    `\n\n## This Response (per-message settings)\n` +
-    `Apply these settings to THIS response only. They override the profile and ` +
-    `working-style defaults where they conflict:\n` +
-    lines.map(l => `- ${l}`).join('\n')
-  );
-}
-
-function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, rules }) {
+function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
 
@@ -447,16 +349,6 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, rule
     'drawing on best practice frameworks, Queensland legislation, and ' +
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
-
-  // Sourcing behaviour: ground answers in retrieved documents when they are
-  // relevant, but do not refuse to help when nothing relevant was retrieved.
-  prompt +=
-    '\n\nWhen retrieved documents are relevant to the question, ground your ' +
-    'answer in them and cite them. When no retrieved document is relevant, you ' +
-    'may still answer from general knowledge rather than declining: answer ' +
-    'directly and usefully, note briefly that the answer reflects general ' +
-    'knowledge rather than a cited source, and do not present uncertain ' +
-    'specifics such as names, dates, or figures as settled fact.';
 
   // Document creation guidance (PROF-1 Phase C).
   prompt +=
@@ -525,10 +417,6 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, rule
     });
   }
 
-  // CHT-2: per-message settings come last so they take precedence over the
-  // profile and working-style blocks above.
-  prompt += buildPerMessageRulesBlock(rules);
-
   return prompt;
 }
 
@@ -539,8 +427,7 @@ router.post('/chat', async (req, res) => {
   const message = body.message;
   const requestedSessionId = body.session_id || body.sessionId;
   const project_id = body.project_id || body.projectId;
-  const requestedMode = body.mode;
-  const rules = body.rules || {}; // CHT-2: per-message Length/Format/Depth/Type settings
+  const mode = body.mode;
 
   if (!email || !message) {
     return res.status(400).json({ error: 'email and message are required in the request body.' });
@@ -552,14 +439,6 @@ router.post('/chat', async (req, res) => {
 
     const { data: profile } = await supabase
       .from('profiles').select('*').eq('id', userId).single();
-
-    // CHT-5: unguided ("direct") mode strips the working-style and voice blocks
-    // and is restricted to admin users. Any non-admin, or any request that does
-    // not explicitly ask for direct, runs in guided mode. The mode_active field
-    // in the response reports the mode that actually applied, so the Power Apps
-    // toggle can reflect the gate.
-    const isAdminUser = profile?.access_tier === 'admin';
-    const mode = (requestedMode === 'direct' && isAdminUser) ? 'direct' : 'guided';
 
     let project = null;
     if (project_id) {
@@ -690,13 +569,12 @@ router.post('/chat', async (req, res) => {
       memories,
       libraryDocs,
       mode,
-      rules,
     });
 
     // PROF-1 Phase C: run through the non-streaming tool loop so Claude can
     // create documents when asked. For ordinary chat (no tool call) this
     // returns on the first round with documentUrl null.
-    const { text: responseText, documentUrl, documentFilename, documentStoragePath } = await runWithTools({
+    const { text: responseText, documentUrl, documentFilename } = await runWithTools({
       baseParams: {
         model: 'claude-sonnet-4-6',
         max_tokens: 8192, // raised from 2048 so full documents fit in one tool call
@@ -713,8 +591,6 @@ router.post('/chat', async (req, res) => {
       session_id: activeSessionId,
       role: 'assistant',
       content: responseText,
-      document_path: documentStoragePath,   // OUT-5: persist so the link survives session resume
-      document_filename: documentFilename,  // OUT-5/OUT-6: friendly download name
     });
     if (assistantInsertError) {
       console.error('Failed to save assistant message:', assistantInsertError);
@@ -733,19 +609,6 @@ router.post('/chat', async (req, res) => {
       generateAndSaveTitle(activeSessionId, message, responseText)
         .catch(err => console.error('Background title generation error:', err.message));
     }
-
-    // =========================================================================
-    // SVR-6: summarise + embed every 10 messages for cross-session recall.
-    // =========================================================================
-    // Fire-and-forget, mirroring SVR-5 above. summariseSession self-checks the
-    // session's saved message count and only does work when it has just crossed
-    // a multiple of 10 messages; otherwise it returns immediately. The promise
-    // is intentionally not awaited so it never delays the response, and any
-    // failure is logged to Render logs without affecting the reply already
-    // built. The summary it writes is consumed by the match_sessions retrieval
-    // earlier in this handler on future turns and in future sessions.
-    summariseSession(activeSessionId, userId)
-      .catch(err => console.error('Background session summary error:', err.message));
 
     const citations = (libraryDocs || []).map(d => ({
       title: d.title,
@@ -794,7 +657,7 @@ router.put('/profile', async (req, res) => {
 
   try {
     const user = await getUserByEmail(email);
-    const allowed = ['role', 'service_area', 'goals', 'preferences', 'artefact_preference', 'high_scrutiny'];
+    const allowed = ['role', 'service_area', 'goals', 'preferences', 'artefact_preference', 'high_scrutiny', 'default_stance', 'length_default', 'tone_register', 'uncertainty_handling', 'output_density', 'next_steps'];
     const filtered = {};
     for (const key of allowed) {
       if (key in updates) filtered[key] = updates[key];
@@ -924,40 +787,16 @@ router.get('/sessions/:id/messages', async (req, res) => {
 
     const { data: messages, error: messagesError } = await supabase
       .from('messages')
-      .select('id, role, content, document_path, document_filename, created_at')
+      .select('id, role, content, created_at')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true });
 
     if (messagesError) throw messagesError;
 
-    // Add content_html for HtmlText rendering, and (OUT-5) re-sign any stored
-    // document so its download button works again on a resumed session. The
-    // original signed URLs expire after 7 days, so a fresh one is minted here.
-    // signExistingFile returns null on failure, so a missing or unsignable file
-    // simply yields no button rather than failing the whole load.
-    const messagesWithHtml = await Promise.all((messages || []).map(async m => {
-      let document_url = null;
-      if (m.document_path) {
-        try {
-          // signExistingFile returns { signedUrl, storagePath }; persist only
-          // the URL string. Wrapped in try/catch so one unsignable file yields
-          // no download button instead of failing the whole session load.
-          const signed = await signExistingFile(m.document_path, m.document_filename);
-          document_url = signed.signedUrl;
-        } catch (signErr) {
-          console.error('Re-sign failed for', m.document_path, signErr.message);
-          document_url = null;
-        }
-      }
-      return {
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        created_at: m.created_at,
-        content_html: m.role === 'assistant' ? toHtml(m.content) : m.content,
-        document_url,
-        document_filename: m.document_filename || null,
-      };
+    // Add content_html to each message so Power Apps can render via HtmlText
+    const messagesWithHtml = (messages || []).map(m => ({
+      ...m,
+      content_html: m.role === 'assistant' ? toHtml(m.content) : m.content,
     }));
 
     res.json({
