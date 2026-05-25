@@ -35,7 +35,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // requires p_user_id and p_project_id parameters.
 
 const PROJECT_THRESHOLD = 0.3;
-const LIBRARY_THRESHOLD = 0.55;
+const LIBRARY_THRESHOLD = 0.4;
 const PROJECT_MATCH_COUNT = 6;
 const LIBRARY_MATCH_COUNT = 8;
 
