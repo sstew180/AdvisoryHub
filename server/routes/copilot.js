@@ -657,7 +657,7 @@ router.put('/profile', async (req, res) => {
 
   try {
     const user = await getUserByEmail(email);
-    const allowed = ['role', 'service_area', 'goals', 'preferences', 'artefact_preference', 'high_scrutiny', 'default_stance', 'length_default', 'tone_register', 'uncertainty_handling', 'output_density', 'next_steps'];
+    const allowed = ['role', 'service_area', 'goals', 'preferences', 'artefact_preference', 'high_scrutiny', 'default_stance', 'length_default', 'tone_register', 'uncertainty_handling', 'output_density', 'next_steps', 'clarification_style', 'context_input', 'primary_use', 'refinement_style', 'expertise_level'];
     const filtered = {};
     for (const key of allowed) {
       if (key in updates) filtered[key] = updates[key];

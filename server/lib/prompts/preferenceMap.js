@@ -240,6 +240,60 @@ const INSTRUCTIONS = {
     never:
       "Do not suggest next steps or what to do next. Answer the question asked " +
       "and stop. The user will ask if they want follow-up actions."
+  },
+
+  // ADP-2 working-style wizard (25 May 2026). Read automatically by
+  // buildWorkingStyleBlock. Question 1 reuses the existing clarification_style.
+  context_input: {
+    fill_gaps:
+      "The user typically provides minimal context and expects you to fill the " +
+      "gaps. Infer sensible detail, proceed, and state the key assumptions you made.",
+    balanced:
+      "The user provides enough context to start and will add more if needed. " +
+      "Proceed on what is given and ask only where a gap would materially change " +
+      "the answer.",
+    full_picture:
+      "The user typically provides detailed context. Rely on what they give, do " +
+      "not pad with generic background, and address their specifics directly."
+  },
+
+  primary_use: {
+    draft:
+      "The user mainly uses you to produce documents and communications. Lean " +
+      "toward delivering usable drafts and finished wording, not only analysis.",
+    advise:
+      "The user mainly uses you for advice and thinking through problems. Lean " +
+      "toward analysis, options and clear recommendations rather than finished " +
+      "documents, unless a draft is asked for.",
+    both:
+      "The user draws on you for both drafting and advice in roughly equal " +
+      "measure. Judge from each request which is wanted."
+  },
+
+  refinement_style: {
+    iterate:
+      "The user prefers quick back and forth. Offer a strong first pass quickly " +
+      "and invite refinement rather than over-polishing the first response.",
+    first_pass_complete:
+      "The user prefers to get it close to right the first time. Aim for a " +
+      "complete, well-formed answer in the first response to minimise follow-up " +
+      "rounds.",
+    stakes_based:
+      "The user calibrates refinement to the stakes. For low-stakes items move " +
+      "quickly; for high-stakes items invest in getting the first response right."
+  },
+
+  expertise_level: {
+    specialist:
+      "The user is a specialist in their domain. Assume deep expertise, use " +
+      "precise terminology, and do not explain basic concepts.",
+    practitioner:
+      "The user has solid working knowledge of their domain. Explain only the " +
+      "non-obvious specifics and do not labour the fundamentals.",
+    generalist:
+      "The user works in related areas but is not a specialist. Explain " +
+      "domain-specific concepts and spell out acronyms; do not assume specialist " +
+      "knowledge."
   }
 
 };
