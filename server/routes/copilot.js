@@ -731,6 +731,51 @@ router.post('/projects', async (req, res) => {
   }
 });
 
+// ---- PATCH /api/copilot/projects/:id (API-8: update project settings) ----
+// Lets PRJ-6 (the project settings page) save background, objectives,
+// custom AI instructions and the always-high-scrutiny flag per project.
+// Only these four fields are writable; ownership is enforced via user_id.
+router.patch('/projects/:id', async (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const email = body.email;
+
+  if (!email) {
+    return res.status(400).json({ error: 'email is required in the body.' });
+  }
+
+  // Allow-list. Only include a field when the key is actually present in the
+  // body, so a partial save never blanks out the fields it did not send.
+  const updates = {};
+  if ('description' in body) updates.description = body.description;
+  if ('objectives' in body) updates.objectives = body.objectives;
+  if ('custom_instructions' in body) updates.custom_instructions = body.custom_instructions;
+  if ('high_scrutiny' in body) updates.high_scrutiny = body.high_scrutiny;
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No updatable fields provided.' });
+  }
+
+  try {
+    const user = await getUserByEmail(email);
+
+    const { data, error } = await supabase
+      .from('projects')
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id, name, description, objectives, custom_instructions, artefact_preference, high_scrutiny, module_id, created_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Project not found or not owned by user.' });
+    res.json(data);
+  } catch (err) {
+    console.error('UpdateProject error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- GET /api/copilot/sessions?email=X&project_id=Y ----
 router.get('/sessions', async (req, res) => {
   const { email } = req.query;
