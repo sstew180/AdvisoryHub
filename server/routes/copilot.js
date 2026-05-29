@@ -527,8 +527,29 @@ router.post('/chat', async (req, res) => {
     //    when the same id appears in both result sets.
     // 4. Both calls log errors via console.error rather than silently swallowing.
 
+    // LIB-7: Always-include project-scoped retrieval.
+    // Single-embedding documents (e.g. a 50,000-character contract uploaded
+    // through the library upload) can be too semantically diffuse to clear
+    // PROJECT_THRESHOLD for vague questions like "what are the key risks
+    // in this contract". To guarantee that documents deliberately loaded
+    // into a project are always available when that project is active, do
+    // a direct fetch by project_id (no similarity gate) and merge those
+    // rows in alongside the similarity-based hits. The similarity call is
+    // retained so that any nuance-driven matches still come through.
+    let alwaysIncludedProjectDocs = [];
     let projectScopedDocs = [];
     if (project_id) {
+      const { data: directProjectDocs, error: directErr } = await supabase
+        .from('library_documents')
+        .select('id, title, category, content, source_url, project_id')
+        .eq('project_id', project_id)
+        .limit(10);
+      if (directErr) {
+        console.error('Direct project-docs fetch error:', directErr);
+      } else {
+        alwaysIncludedProjectDocs = directProjectDocs || [];
+      }
+
       const { data, error } = await supabase.rpc('match_library', {
         query_embedding: queryEmbedding,
         match_threshold: PROJECT_THRESHOLD,
@@ -554,9 +575,11 @@ router.post('/chat', async (req, res) => {
       console.error('Library retrieval error:', libraryError);
     }
 
+    // Dedup by id. Always-included project docs go first so they win the
+    // dedup when the same id also comes back from the similarity calls.
     const seen = new Set();
     const libraryDocs = [];
-    for (const d of [...(projectScopedDocs || []), ...(libraryHits || [])]) {
+    for (const d of [...(alwaysIncludedProjectDocs || []), ...(projectScopedDocs || []), ...(libraryHits || [])]) {
       if (d && d.id && !seen.has(d.id)) {
         seen.add(d.id);
         libraryDocs.push(d);
