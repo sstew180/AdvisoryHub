@@ -408,11 +408,19 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
   }
 
   // LIB-1: single merged section now carries both library and project docs.
+  // LIB-8: project documents get the full content window (up to the upload
+  // cap of 50,000 characters), not the 8,000-character snippet used for the
+  // general library. Long contracts often place admin matter (lodgement
+  // details, contact tables, schedules) in their first 8,000 characters, with
+  // the substantive scope text past that. The general library stays at 8,000
+  // because those rows are short and we want the most relevant snippet.
   if (libraryDocs && libraryDocs.length > 0) {
     prompt += `\n\n## Relevant Frameworks, Guidance and Project Documents`;
     libraryDocs.forEach(d => {
       prompt += `\n\n### ${d.title}`;
-      prompt += `\n${d.content.slice(0, 8000)}`;
+      const isProjectDoc = project && d.project_id && d.project_id === project.id;
+      const contentLimit = isProjectDoc ? 50000 : 8000;
+      prompt += `\n${d.content.slice(0, contentLimit)}`;
       if (d.source_url) prompt += `\nSource: ${d.source_url}`;
     });
   }
