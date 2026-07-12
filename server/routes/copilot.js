@@ -712,7 +712,7 @@ router.get('/projects', async (req, res) => {
     const user = await getUserByEmail(email);
     const { data, error } = await supabase
       .from('projects')
-      .select('id, name, description, objectives, artefact_preference, high_scrutiny, module_id, created_at')
+      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
       .eq('user_id', user.id)
       .is('archived_at', null)
       .order('created_at', { ascending: false });
@@ -731,6 +731,8 @@ router.post('/projects', async (req, res) => {
   const description = body.description;
   const objectives = body.objectives;
   const module_id = body.module_id || body.moduleId;
+  const custom_instructions = body.custom_instructions;
+  const parent_id = body.parent_id || body.parentId;
 
   if (!email) {
     return res.status(400).json({ error: 'email is required in the body.' });
@@ -750,8 +752,10 @@ router.post('/projects', async (req, res) => {
         description: description || null,
         objectives: objectives || null,
         module_id: module_id || null,
+        custom_instructions: custom_instructions || null,
+        parent_id: parent_id || null,
       })
-      .select('id, name, description, objectives, artefact_preference, high_scrutiny, module_id, created_at')
+      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
       .single();
 
     if (error) throw error;
@@ -782,6 +786,8 @@ router.patch('/projects/:id', async (req, res) => {
   if ('objectives' in body) updates.objectives = body.objectives;
   if ('custom_instructions' in body) updates.custom_instructions = body.custom_instructions;
   if ('high_scrutiny' in body) updates.high_scrutiny = body.high_scrutiny;
+  if ('name' in body) updates.name = body.name;
+  if ('parent_id' in body) updates.parent_id = body.parent_id;
 
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No updatable fields provided.' });
@@ -795,7 +801,7 @@ router.patch('/projects/:id', async (req, res) => {
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
-      .select('id, name, description, objectives, custom_instructions, artefact_preference, high_scrutiny, module_id, created_at')
+      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
       .maybeSingle();
 
     if (error) throw error;
