@@ -787,7 +787,7 @@ router.patch('/projects/:id', async (req, res) => {
   if ('custom_instructions' in body) updates.custom_instructions = body.custom_instructions;
   if ('high_scrutiny' in body) updates.high_scrutiny = body.high_scrutiny;
   if ('name' in body) updates.name = body.name;
-  if ('parent_id' in body) updates.parent_id = body.parent_id;
+  if ('parent_id' in body) updates.parent_id = body.parent_id || null;
 
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No updatable fields provided.' });
