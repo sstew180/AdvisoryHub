@@ -787,6 +787,8 @@ router.patch('/projects/:id', async (req, res) => {
   if ('custom_instructions' in body) updates.custom_instructions = body.custom_instructions;
   if ('high_scrutiny' in body) updates.high_scrutiny = body.high_scrutiny;
   if ('name' in body) updates.name = body.name;
+  // parent_id is a uuid column: an empty string from the client must become null,
+  // otherwise Postgres rejects it with "invalid input syntax for type uuid".
   if ('parent_id' in body) updates.parent_id = body.parent_id || null;
 
   if (Object.keys(updates).length === 0) {
@@ -813,6 +815,111 @@ router.patch('/projects/:id', async (req, res) => {
   }
 });
 
+// ---- GET /api/copilot/projects/archived?email=X ----
+// NOTE: this must be declared before any '/projects/:id' style routes so that
+// the literal 'archived' segment is not captured as an :id parameter.
+router.get('/projects/archived', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at, archived_at')
+      .eq('user_id', user.id)
+      .not('archived_at', 'is', null)
+      .order('archived_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('GetArchivedProjects error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PATCH /api/copilot/projects/:id/archive ----
+router.patch('/projects/:id/archive', async (req, res) => {
+  const { id } = req.params;
+  const email = (req.body || {}).email;
+  if (!email) return res.status(400).json({ error: 'email is required in the body.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id, name, archived_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Project not found or not owned by user.' });
+    res.json({ success: true, project: data });
+  } catch (err) {
+    console.error('ArchiveProject error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PATCH /api/copilot/projects/:id/restore ----
+router.patch('/projects/:id/restore', async (req, res) => {
+  const { id } = req.params;
+  const email = (req.body || {}).email;
+  if (!email) return res.status(400).json({ error: 'email is required in the body.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ archived_at: null })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id, name, archived_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Project not found or not owned by user.' });
+    res.json({ success: true, project: data });
+  } catch (err) {
+    console.error('RestoreProject error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- DELETE /api/copilot/projects/:id?email=X ----
+router.delete('/projects/:id', async (req, res) => {
+  const { id } = req.params;
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data: existing } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!existing) return res.status(404).json({ error: 'Project not found or not owned by user.' });
+
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DeleteProject error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- GET /api/copilot/sessions?email=X&project_id=Y ----
 router.get('/sessions', async (req, res) => {
   const { email } = req.query;
@@ -833,6 +940,110 @@ router.get('/sessions', async (req, res) => {
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- GET /api/copilot/sessions/archived?email=X ----
+// Declared before '/sessions/:id/...' routes so 'archived' is not read as an :id.
+router.get('/sessions/archived', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('id, title, summary, project_id, created_at, archived_at')
+      .eq('user_id', user.id)
+      .not('archived_at', 'is', null)
+      .order('archived_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('GetArchivedSessions error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PATCH /api/copilot/sessions/:id/archive ----
+router.patch('/sessions/:id/archive', async (req, res) => {
+  const { id } = req.params;
+  const email = (req.body || {}).email;
+  if (!email) return res.status(400).json({ error: 'email is required in the body.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id, title, archived_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Session not found or not owned by user.' });
+    res.json({ success: true, session: data });
+  } catch (err) {
+    console.error('ArchiveSession error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PATCH /api/copilot/sessions/:id/restore ----
+router.patch('/sessions/:id/restore', async (req, res) => {
+  const { id } = req.params;
+  const email = (req.body || {}).email;
+  if (!email) return res.status(400).json({ error: 'email is required in the body.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({ archived_at: null })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select('id, title, archived_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Session not found or not owned by user.' });
+    res.json({ success: true, session: data });
+  } catch (err) {
+    console.error('RestoreSession error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- DELETE /api/copilot/sessions/:id?email=X ----
+router.delete('/sessions/:id', async (req, res) => {
+  const { id } = req.params;
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+    const { data: existing } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!existing) return res.status(404).json({ error: 'Session not found or not owned by user.' });
+
+    const { error } = await supabase
+      .from('sessions')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DeleteSession error:', err);
     res.status(500).json({ error: err.message });
   }
 });
