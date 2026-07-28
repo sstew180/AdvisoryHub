@@ -1170,4 +1170,147 @@ router.get('/modules', async (req, res) => {
   }
 });
 
+// =============================================================================
+// MEMORY MANAGEMENT (MEM-1)
+// Pinned notes are rows in session_embeddings whose content starts with the
+// '[PINNED NOTE] ' prefix (see routes/pinMemory.js). They link to a project
+// through their session's project_id. Auto-generated session summaries also
+// live in session_embeddings but do NOT carry the prefix, so they are excluded.
+// =============================================================================
+
+const PINNED_PREFIX = '[PINNED NOTE] ';
+
+// ---- GET /api/copilot/memories?email=X&project_id=Y ----
+// Lists pinned notes for a project. Returns the row id, the note text (with the
+// prefix stripped for display), and created_at.
+router.get('/memories', async (req, res) => {
+  const { email } = req.query;
+  const project_id = req.query.project_id || req.query.projectId;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+  if (!project_id) return res.status(400).json({ error: 'project_id query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+
+    // Find the sessions that belong to this project for this user.
+    const { data: sessions, error: sessErr } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('project_id', project_id);
+    if (sessErr) throw sessErr;
+
+    const sessionIds = (sessions || []).map(s => s.id);
+    if (sessionIds.length === 0) return res.json([]);
+
+    // Pinned notes for those sessions.
+    const { data: rows, error: rowErr } = await supabase
+      .from('session_embeddings')
+      .select('id, content, session_id, created_at')
+      .in('session_id', sessionIds)
+      .like('content', PINNED_PREFIX + '%')
+      .order('created_at', { ascending: false });
+    if (rowErr) throw rowErr;
+
+    const memories = (rows || []).map(r => ({
+      id: r.id,
+      content: r.content.startsWith(PINNED_PREFIX) ? r.content.slice(PINNED_PREFIX.length) : r.content,
+      session_id: r.session_id,
+      created_at: r.created_at,
+    }));
+
+    res.json(memories);
+  } catch (err) {
+    console.error('GetMemories error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- PATCH /api/copilot/memories/:id ----
+// Updates a pinned note's text and re-embeds it (the embedding must match the
+// new text). Body: { email, content }. The prefix is re-applied server-side.
+router.patch('/memories/:id', async (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const email = body.email;
+  const content = body.content;
+  if (!email) return res.status(400).json({ error: 'email is required in the body.' });
+  if (!content || !content.trim()) return res.status(400).json({ error: 'content is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+
+    // Verify the note belongs to a session owned by this user before editing.
+    const { data: row, error: rowErr } = await supabase
+      .from('session_embeddings')
+      .select('id, session_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (rowErr) throw rowErr;
+    if (!row) return res.status(404).json({ error: 'Memory not found.' });
+
+    const { data: sess } = await supabase
+      .from('sessions')
+      .select('user_id')
+      .eq('id', row.session_id)
+      .maybeSingle();
+    if (!sess || sess.user_id !== user.id) {
+      return res.status(404).json({ error: 'Memory not found or not owned by user.' });
+    }
+
+    const newContent = PINNED_PREFIX + content.trim();
+    const embedding = await embed(newContent);
+
+    const { error: updErr } = await supabase
+      .from('session_embeddings')
+      .update({ content: newContent, embedding })
+      .eq('id', id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('UpdateMemory error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- DELETE /api/copilot/memories/:id?email=X ----
+router.delete('/memories/:id', async (req, res) => {
+  const { id } = req.params;
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
+
+  try {
+    const user = await getUserByEmail(email);
+
+    // Verify ownership through the session before deleting.
+    const { data: row } = await supabase
+      .from('session_embeddings')
+      .select('id, session_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (!row) return res.status(404).json({ error: 'Memory not found.' });
+
+    const { data: sess } = await supabase
+      .from('sessions')
+      .select('user_id')
+      .eq('id', row.session_id)
+      .maybeSingle();
+    if (!sess || sess.user_id !== user.id) {
+      return res.status(404).json({ error: 'Memory not found or not owned by user.' });
+    }
+
+    const { error } = await supabase
+      .from('session_embeddings')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DeleteMemory error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
