@@ -823,16 +823,18 @@ router.patch('/projects/:id', async (req, res) => {
 // the literal 'archived' segment is not captured as an :id parameter.
 router.get('/projects/archived', async (req, res) => {
   const { email } = req.query;
+  const module_id = req.query.module_id || req.query.moduleId;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
 
   try {
     const user = await getUserByEmail(email);
-    const { data, error } = await supabase
+    let query = supabase
       .from('projects')
       .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at, archived_at')
       .eq('user_id', user.id)
-      .not('archived_at', 'is', null)
-      .order('archived_at', { ascending: false });
+      .not('archived_at', 'is', null);
+    if (module_id) query = query.eq('module_id', module_id);
+    const { data, error } = await query.order('archived_at', { ascending: false });
 
     if (error) throw error;
     res.json(data || []);
@@ -967,16 +969,31 @@ router.get('/sessions', async (req, res) => {
 // Declared before '/sessions/:id/...' routes so 'archived' is not read as an :id.
 router.get('/sessions/archived', async (req, res) => {
   const { email } = req.query;
+  const module_id = req.query.module_id || req.query.moduleId;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
 
   try {
     const user = await getUserByEmail(email);
-    const { data, error } = await supabase
+    let query = supabase
       .from('sessions')
       .select('id, title, summary, project_id, created_at, archived_at')
       .eq('user_id', user.id)
-      .not('archived_at', 'is', null)
-      .order('archived_at', { ascending: false });
+      .not('archived_at', 'is', null);
+
+    // Restrict archived sessions to the active domain's projects.
+    if (module_id) {
+      const { data: domainProjects, error: dpErr } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('module_id', module_id);
+      if (dpErr) throw dpErr;
+      const ids = (domainProjects || []).map(p => p.id);
+      if (ids.length === 0) return res.json([]);
+      query = query.in('project_id', ids);
+    }
+
+    const { data, error } = await query.order('archived_at', { ascending: false });
 
     if (error) throw error;
     res.json(data || []);
