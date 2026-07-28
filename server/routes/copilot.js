@@ -706,16 +706,19 @@ router.put('/profile', async (req, res) => {
 // ---- GET /api/copilot/projects?email=X ----
 router.get('/projects', async (req, res) => {
   const { email } = req.query;
+  const module_id = req.query.module_id || req.query.moduleId;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
 
   try {
     const user = await getUserByEmail(email);
-    const { data, error } = await supabase
+    let query = supabase
       .from('projects')
       .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
       .eq('user_id', user.id)
-      .is('archived_at', null)
-      .order('created_at', { ascending: false });
+      .is('archived_at', null);
+    // When a domain (module) is supplied, show only that domain's projects.
+    if (module_id) query = query.eq('module_id', module_id);
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
@@ -924,6 +927,7 @@ router.delete('/projects/:id', async (req, res) => {
 router.get('/sessions', async (req, res) => {
   const { email } = req.query;
   const project_id = req.query.project_id || req.query.projectId;
+  const module_id = req.query.module_id || req.query.moduleId;
   if (!email) return res.status(400).json({ error: 'email query parameter is required.' });
 
   try {
@@ -935,6 +939,21 @@ router.get('/sessions', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(20);
     if (project_id) query = query.eq('project_id', project_id);
+
+    // When a domain (module) is supplied, restrict sessions to that domain's
+    // projects (sessions follow their project's domain).
+    if (module_id && !project_id) {
+      const { data: domainProjects, error: dpErr } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('module_id', module_id);
+      if (dpErr) throw dpErr;
+      const ids = (domainProjects || []).map(p => p.id);
+      // If the domain has no projects, there are no sessions to show.
+      if (ids.length === 0) return res.json([]);
+      query = query.in('project_id', ids);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
