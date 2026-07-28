@@ -1206,17 +1206,15 @@ router.get('/memories', async (req, res) => {
     // Pinned notes for those sessions.
     const { data: rows, error: rowErr } = await supabase
       .from('session_embeddings')
-      .select('id, content, session_id, created_at')
+      .select('id, content, session_id')
       .in('session_id', sessionIds)
-      .like('content', PINNED_PREFIX + '%')
-      .order('created_at', { ascending: false });
+      .like('content', PINNED_PREFIX + '%');
     if (rowErr) throw rowErr;
 
     const memories = (rows || []).map(r => ({
       id: r.id,
       content: r.content.startsWith(PINNED_PREFIX) ? r.content.slice(PINNED_PREFIX.length) : r.content,
       session_id: r.session_id,
-      created_at: r.created_at,
     }));
 
     res.json(memories);
