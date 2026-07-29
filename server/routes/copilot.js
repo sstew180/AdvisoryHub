@@ -36,8 +36,17 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PROJECT_THRESHOLD = 0.3;
 const LIBRARY_THRESHOLD = 0.4;
-const PROJECT_MATCH_COUNT = 6;
+const PROJECT_MATCH_COUNT = 10;
 const LIBRARY_MATCH_COUNT = 8;
+
+// LIB-7 (revised): the always-include direct fetch below is only a genuine
+// guarantee while a project holds few enough rows to return them all. Once a
+// project holds chunked documents (a long contract can produce forty or more
+// rows) an unordered fetch capped at this number returns an arbitrary sample,
+// which crowds the prompt without improving relevance. Above this count the
+// direct fetch is skipped and similarity retrieval does the work, which is why
+// PROJECT_MATCH_COUNT was raised from 6 to 10 at the same time.
+const PROJECT_DIRECT_INCLUDE_LIMIT = 10;
 
 // Configure marked for the rendering Power Apps HtmlText control supports.
 // gfm gives line breaks on single newline; breaks ensures \n becomes <br>.
@@ -544,18 +553,42 @@ router.post('/chat', async (req, res) => {
     // a direct fetch by project_id (no similarity gate) and merge those
     // rows in alongside the similarity-based hits. The similarity call is
     // retained so that any nuance-driven matches still come through.
+    //
+    // LIB-7 revision: this only holds while the project has few enough rows
+    // to return them ALL. Chunked ingestion (a long contract split into forty
+    // or more rows) breaks the guarantee, because a capped fetch then returns
+    // an arbitrary subset that fills the prompt with unrelated chunks and
+    // pushes out the genuinely relevant ones. So count first, and only take
+    // the direct-fetch path when the whole set fits inside the cap. Above the
+    // cap, similarity retrieval (PROJECT_MATCH_COUNT, now 10) does the work.
     let alwaysIncludedProjectDocs = [];
     let projectScopedDocs = [];
     if (project_id) {
-      const { data: directProjectDocs, error: directErr } = await supabase
+      const { count: projectDocCount, error: countErr } = await supabase
         .from('library_documents')
-        .select('id, title, category, content, source_url, project_id')
-        .eq('project_id', project_id)
-        .limit(10);
-      if (directErr) {
-        console.error('Direct project-docs fetch error:', directErr);
-      } else {
-        alwaysIncludedProjectDocs = directProjectDocs || [];
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', project_id);
+
+      if (countErr) {
+        console.error('Project-docs count error:', countErr);
+      } else if (projectDocCount > 0 && projectDocCount <= PROJECT_DIRECT_INCLUDE_LIMIT) {
+        const { data: directProjectDocs, error: directErr } = await supabase
+          .from('library_documents')
+          .select('id, title, category, content, source_url, project_id')
+          .eq('project_id', project_id)
+          .order('title', { ascending: true })
+          .limit(PROJECT_DIRECT_INCLUDE_LIMIT);
+        if (directErr) {
+          console.error('Direct project-docs fetch error:', directErr);
+        } else {
+          alwaysIncludedProjectDocs = directProjectDocs || [];
+        }
+      } else if (projectDocCount > PROJECT_DIRECT_INCLUDE_LIMIT) {
+        console.log(
+          'LIB-7: project ' + project_id + ' holds ' + projectDocCount +
+          ' library rows, above the always-include limit of ' + PROJECT_DIRECT_INCLUDE_LIMIT +
+          '. Using similarity retrieval only.'
+        );
       }
 
       const { data, error } = await supabase.rpc('match_library', {
