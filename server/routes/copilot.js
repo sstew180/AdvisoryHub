@@ -36,16 +36,31 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PROJECT_THRESHOLD = 0.3;
 const LIBRARY_THRESHOLD = 0.4;
-const PROJECT_MATCH_COUNT = 10;
+
+// LIB-11: sized against the chunk size used at ingestion, not chosen in the
+// abstract. What matters to the model is total retrieved CHARACTERS, not the
+// number of rows:
+//
+//   6 rows  x 6,000-char chunks = 36,000 chars   (original)
+//   10 rows x 2,000-char chunks = 20,000 chars   (after LIB-10, a coverage LOSS)
+//   25 rows x 2,000-char chunks = 50,000 chars   (current)
+//
+// Cutting chunk size to 2,000 (LIB-10) sharpened precision, so a short clause
+// buried in a long document now ranks. But holding the row count at 10 nearly
+// halved the context the model actually sees, and the visible symptom was the
+// model making confident claims about what a project does NOT contain while
+// only ever seeing ten of several hundred rows. Negative claims need coverage,
+// not just precision. Raise the two together or one undoes the other.
+const PROJECT_MATCH_COUNT = 25;
 const LIBRARY_MATCH_COUNT = 8;
 
 // LIB-7 (revised): the always-include direct fetch below is only a genuine
 // guarantee while a project holds few enough rows to return them all. Once a
-// project holds chunked documents (a long contract can produce forty or more
+// project holds chunked documents (a long contract can produce hundreds of
 // rows) an unordered fetch capped at this number returns an arbitrary sample,
 // which crowds the prompt without improving relevance. Above this count the
 // direct fetch is skipped and similarity retrieval does the work, which is why
-// PROJECT_MATCH_COUNT was raised from 6 to 10 at the same time.
+// PROJECT_MATCH_COUNT was raised alongside it (see LIB-11 above).
 const PROJECT_DIRECT_INCLUDE_LIMIT = 10;
 
 // Configure marked for the rendering Power Apps HtmlText control supports.
