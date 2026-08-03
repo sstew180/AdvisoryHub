@@ -50,6 +50,15 @@
 //   --description "..."   Default: none
 //   --source-url "..."    Default: none
 //   --dry-run             Extract, chunk and report, but insert nothing.
+//   --chunk-size N        Target chunk size in characters (default 6000).
+//                         Lower it for contracts: a short decisive clause
+//                         inside a large chunk contributes only a small part
+//                         of that chunk's embedding and will not be retrieved.
+//                         2000 is a good setting for council contracts.
+//                         Overlap and the hard cap are derived automatically.
+//   --overlap N           Override the derived overlap, in characters.
+//   --continue-on-error   Report a failed file and carry on, instead of
+//                         aborting the whole run.
 //
 // TITLE RULES
 // -----------
@@ -98,7 +107,7 @@ const mammoth = require('mammoth');
 const PDFParser = require('pdf2json');
 
 const supabase = require('../lib/supabase');
-const { chunkAndEmbed } = require('../lib/chunkAndEmbed');
+const { chunkAndEmbed, resolveOptions } = require('../lib/chunkAndEmbed');
 
 const SUPPORTED = ['.pdf', '.docx', '.txt', '.md', '.csv'];
 
@@ -191,7 +200,7 @@ function deriveTitle(filePath, text) {
 async function ingestFile(filePath, options) {
   const {
     projectIds, category, domain, jurisdiction,
-    description, sourceUrl, explicitTitle, dryRun,
+    description, sourceUrl, explicitTitle, dryRun, chunkOptions,
   } = options;
 
   console.log('');
@@ -210,7 +219,7 @@ async function ingestFile(filePath, options) {
   console.log('  Chunking and embedding...');
   const results = await chunkAndEmbed(text, (done, total) => {
     process.stdout.write('\r    Embedded ' + done + ' of ' + total + ' chunks   ');
-  });
+  }, chunkOptions);
   process.stdout.write('\n');
 
   const total = results.length;
@@ -294,6 +303,9 @@ async function main() {
     console.error('  --category "..."     --domain "..."   --jurisdiction "..."');
     console.error('  --description "..."  --source-url "..."');
     console.error('  --dry-run            Extract and report, insert nothing.');
+    console.error('  --chunk-size N       Target chunk size in chars (default 6000; use 2000 for contracts).');
+    console.error('  --overlap N          Override derived overlap, in chars.');
+    console.error('  --continue-on-error  Skip unreadable files instead of stopping.');
     process.exit(1);
   }
   if (!fs.existsSync(inputPath)) {
@@ -304,6 +316,29 @@ async function main() {
   const projectIds = toArray(args['project-id']);
   const isProjectMode = projectIds.length > 0;
   const dryRun = args['dry-run'] === true;
+  const continueOnError = args['continue-on-error'] === true;
+
+  // Chunk sizing. Passing no flag leaves chunkAndEmbed on its original
+  // defaults, so admin/global ingestion behaviour is untouched.
+  const chunkOptions = {};
+  const chunkSizeRaw = pickString(args['chunk-size'], null);
+  if (chunkSizeRaw !== null) {
+    const n = parseInt(chunkSizeRaw, 10);
+    if (!Number.isFinite(n) || n < 400) {
+      console.error('--chunk-size must be a number of at least 400.');
+      process.exit(1);
+    }
+    chunkOptions.targetChars = n;
+  }
+  const overlapRaw = pickString(args.overlap, null);
+  if (overlapRaw !== null) {
+    const n = parseInt(overlapRaw, 10);
+    if (!Number.isFinite(n) || n < 0) {
+      console.error('--overlap must be a number of 0 or more.');
+      process.exit(1);
+    }
+    chunkOptions.overlapChars = n;
+  }
 
   const category = pickString(args.category, isProjectMode ? 'Contract' : 'Legislation');
   const domain = pickString(args.domain, isProjectMode ? 'Contract Management' : 'General');
@@ -339,6 +374,15 @@ async function main() {
   console.log('Domain:       ' + domain);
   console.log('Jurisdiction: ' + jurisdiction);
   console.log('Files:        ' + files.length);
+  if (chunkOptions.targetChars || chunkOptions.overlapChars !== undefined) {
+    const resolved = resolveOptions(chunkOptions);
+    console.log('Chunk sizing: target ' + resolved.targetChars +
+                ', max ' + resolved.maxChars +
+                ', min ' + resolved.minChars +
+                ', overlap ' + resolved.overlapChars);
+  } else {
+    console.log('Chunk sizing: default (target 6000, no overlap)');
+  }
   if (dryRun) console.log('DRY RUN:      no rows will be inserted');
   console.log('=========================================================');
 
@@ -346,11 +390,24 @@ async function main() {
 
   const summary = [];
   for (const filePath of files) {
-    const result = await ingestFile(filePath, {
-      projectIds, category, domain, jurisdiction,
-      description, sourceUrl, explicitTitle, dryRun,
-    });
-    summary.push({ file: path.basename(filePath), ...result });
+    try {
+      const result = await ingestFile(filePath, {
+        projectIds, category, domain, jurisdiction,
+        description, sourceUrl, explicitTitle, dryRun, chunkOptions,
+      });
+      summary.push({ file: path.basename(filePath), ...result });
+    } catch (err) {
+      // A single unreadable file should not throw away an expensive run that
+      // has already embedded earlier documents.
+      console.log('');
+      console.log('  FAILED: ' + err.message);
+      summary.push({ file: path.basename(filePath), skipped: true, failed: true, chunks: 0, rows: 0 });
+      if (!continueOnError) {
+        console.log('');
+        console.log('Stopping. Re-run with --continue-on-error to skip failures and carry on.');
+        break;
+      }
+    }
   }
 
   const ingested = summary.filter(s => !s.skipped);
@@ -362,10 +419,17 @@ async function main() {
   console.log('=========================================================');
   console.log('Done. ' + ingested.length + ' of ' + files.length + ' files ingested.');
   console.log('Chunks: ' + totalChunks + '   Rows ' + (dryRun ? 'that would be written' : 'written') + ': ' + totalRows);
-  if (skipped.length > 0) {
+  const failed = summary.filter(s => s.failed);
+  const noText = skipped.filter(s => !s.failed);
+  if (noText.length > 0) {
     console.log('');
     console.log('Skipped (no extractable text, needs OCR):');
-    skipped.forEach(s => console.log('  ' + s.file));
+    noText.forEach(s => console.log('  ' + s.file));
+  }
+  if (failed.length > 0) {
+    console.log('');
+    console.log('FAILED (could not be read):');
+    failed.forEach(s => console.log('  ' + s.file));
   }
   console.log('=========================================================');
   console.log('');
