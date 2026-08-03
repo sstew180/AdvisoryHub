@@ -66,10 +66,23 @@ const EMBED_SAFE_MAX = 7500;
 //   "Chapter 6", "Part 2", "Division 3", "Subdivision 1", "Schedule 4".
 const HEADING_RE = /^(chapter|part|division|subdivision|schedule)\b/i;
 
-// A numbered section or clause heading, e.g. "207 Disposing of...", "207A ...",
-// "237.", "5.11.4", "20.3". Contract clause numbering is covered by the
-// leading-digit form.
-const SECTION_RE = /^\d{1,4}[A-Za-z]?[\s.)\u2014-]/;
+// A numbered section or clause heading. Three accepted forms:
+//   1. A dotted clause number: "5.11.4", "20.3", "1.005 Waste Levy Elanora".
+//   2. A number closed by punctuation: "237.", "12)", "8A."
+//   3. A legislation-style section: two or more digits then a capitalised
+//      word, e.g. "207 Disposing of waste".
+//
+// LIB-13: the earlier pattern was /^\d{1,4}[A-Za-z]?[\s.)\u2014-]/, which
+// treated ANY line beginning with a digit and a space as a clause boundary.
+// In a contract that includes quantities and rate tables, lines such as
+// "1 x 1.5m3 Front Lift Bin" and "3 x 3.0m3 Front Lift Bin" were each read as
+// the start of a new clause. A pricing schedule was therefore shredded into
+// chunks of 340 to 500 characters against a 2,000-character target, and the
+// resulting fragments were too small and too repetitive to rank: three
+// separate chunks each carrying a fuel levy line all failed to retrieve for a
+// direct question about that levy. Requiring real clause syntax keeps genuine
+// boundaries and ignores quantities.
+const SECTION_RE = /^(?:\d{1,4}[A-Za-z]?(?:\.\d{1,4})+|\d{1,4}[A-Za-z]?[.)\u2014-]|\d{2,4}[A-Za-z]?\s+[A-Z])/;
 
 /**
  * Resolve caller options against the defaults, applying safety guards.
