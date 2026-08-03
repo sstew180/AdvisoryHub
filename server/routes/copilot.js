@@ -52,6 +52,12 @@ const LIBRARY_THRESHOLD = 0.4;
 // only ever seeing ten of several hundred rows. Negative claims need coverage,
 // not just precision. Raise the two together or one undoes the other.
 const PROJECT_MATCH_COUNT = 25;
+
+// LIB-14: cap on the keyword pass. Held well below PROJECT_MATCH_COUNT because
+// keyword hits SUPPLEMENT the vector results rather than replacing them: a
+// broad term can match a great many rows, and the aim is to recover the
+// specific chunks semantic search misses, not to flood the prompt.
+const PROJECT_KEYWORD_MATCH_COUNT = 8;
 const LIBRARY_MATCH_COUNT = 8;
 
 // LIB-7 (revised): the always-include direct fetch below is only a genuine
@@ -362,6 +368,108 @@ async function getUserByEmail(email) {
   return user;
 }
 
+// =============================================================================
+// LIB-14: keyword term extraction for hybrid retrieval.
+//
+// Embeddings represent a chunk's DOMINANT meaning, which makes them poor at
+// rare literal terms. Observed case: a question naming a "fuel levy" failed
+// three times to retrieve the one chunk containing the line "Fuel Levy: 6.5%",
+// because that chunk is a price list (site names, bin sizes, dollar rates) and
+// its vector reads as pricing data, not as a discussion of adjustment
+// mechanisms. The literal phrase was right there; semantic similarity could
+// not see it.
+//
+// Contract work is full of terms where the literal string is what matters:
+// clause numbers (5.11.4), certificate references (ADJ2, V8), charge names
+// (fuel levy, waste tracking fee), and defined terms. So run a keyword pass
+// alongside the vector search and merge the results.
+//
+// Extraction keeps terms that are worth matching literally and discards those
+// that would match nearly everything.
+// =============================================================================
+
+// Common words that carry no retrieval value. Deliberately includes the
+// vocabulary of contract questions themselves ("contract", "clause",
+// "mechanism"), because those appear in almost every chunk and would return
+// noise rather than signal.
+const KEYWORD_STOPWORDS = new Set([
+  'the', 'and', 'for', 'that', 'this', 'with', 'from', 'what', 'when', 'where',
+  'which', 'who', 'whom', 'how', 'why', 'does', 'did', 'are', 'was', 'were',
+  'has', 'have', 'had', 'been', 'being', 'can', 'could', 'would', 'should',
+  'will', 'shall', 'may', 'might', 'must', 'any', 'all', 'not', 'but', 'its',
+  'their', 'there', 'they', 'them', 'then', 'than', 'into', 'onto', 'under',
+  'over', 'about', 'against', 'between', 'through', 'during', 'before',
+  'after', 'above', 'below', 'you', 'your', 'our', 'ours', 'his', 'her',
+  'contract', 'clause', 'document', 'documents', 'agreement', 'provision',
+  'mechanism', 'evidence', 'apply', 'applied', 'sit', 'sits', 'introduce',
+  'introduces', 'please', 'give', 'show', 'tell', 'explain', 'analysis',
+  'review', 'question', 'answer', 'detail', 'details', 'more', 'deeper',
+]);
+
+/**
+ * Pull the terms from a question that are worth matching literally.
+ *
+ * Three classes are kept:
+ *   1. Alphanumeric identifiers: clause numbers (5.11.4), certificate
+ *      references (ADJ2, V8, LG314), anything mixing digits and letters.
+ *   2. Two-word phrases, which carry far more signal than single words:
+ *      "fuel levy" is specific, "fuel" alone is not.
+ *   3. Distinctive single words of five characters or more.
+ *
+ * @param {string} message
+ * @returns {string[]} terms, most specific first, capped for query size.
+ */
+function extractKeywordTerms(message) {
+  const text = String(message || '');
+  const identifiers = [];
+  const phrases = [];
+  const singles = [];
+
+  // 1. Identifiers: digits with dots/slashes, or letter-digit combinations.
+  const idMatches = text.match(/\b(?:[A-Za-z]{1,6}[-/]?\d[\w./-]*|\d+(?:\.\d+)+)\b/g) || [];
+  for (const m of idMatches) {
+    const t = m.trim();
+    if (t.length >= 2 && !identifiers.includes(t)) identifiers.push(t);
+  }
+
+  // Tokenise for phrase and single-word extraction.
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  // 2. Adjacent pairs where BOTH words are meaningful.
+  for (let i = 0; i < words.length - 1; i++) {
+    const a = words[i];
+    const b = words[i + 1];
+    if (a.length < 3 || b.length < 3) continue;
+    if (KEYWORD_STOPWORDS.has(a) || KEYWORD_STOPWORDS.has(b)) continue;
+    if (/^\d+$/.test(a) && /^\d+$/.test(b)) continue;
+    const phrase = a + ' ' + b;
+    if (!phrases.includes(phrase)) phrases.push(phrase);
+  }
+
+  // 3. Distinctive single words.
+  for (const w of words) {
+    if (w.length < 5) continue;
+    if (KEYWORD_STOPWORDS.has(w)) continue;
+    if (!singles.includes(w)) singles.push(w);
+  }
+
+  // Returned in two tiers rather than one flat list, because they behave very
+  // differently in an OR query. "fuel levy" matches a handful of rows; "value"
+  // matches hundreds. Mixed into a single capped query the broad terms fill
+  // every slot and crowd out the precise match the user actually asked about,
+  // which is the exact failure this feature exists to fix. So the caller tries
+  // precise terms alone first, and only falls back to broad ones if that
+  // returns nothing.
+  return {
+    precise: [...identifiers, ...phrases].slice(0, 10),
+    broad: singles.slice(0, 6),
+  };
+}
+
 function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, projectManifest }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
@@ -619,6 +727,7 @@ router.post('/chat', async (req, res) => {
     // cap, similarity retrieval (PROJECT_MATCH_COUNT, now 10) does the work.
     let alwaysIncludedProjectDocs = [];
     let projectScopedDocs = [];
+    let keywordDocs = [];
     if (project_id) {
       const { count: projectDocCount, error: countErr } = await supabase
         .from('library_documents')
@@ -659,6 +768,63 @@ router.post('/chat', async (req, res) => {
       } else {
         projectScopedDocs = (data || []).filter(d => d.project_id === project_id);
       }
+
+      // LIB-14: keyword pass. Runs alongside the vector search above, not
+      // instead of it. Vector search finds chunks that MEAN something similar
+      // to the question; this finds chunks that literally CONTAIN the terms
+      // used in it. The two fail in different places, so together they cover
+      // considerably more than either alone.
+      //
+      // The case that motivated it: a chunk reading "Fuel Levy: 6.5%" inside a
+      // price list never ranked for a question about a fuel levy, because the
+      // chunk's vector is dominated by rates and site names. A literal match on
+      // the phrase finds it immediately.
+      //
+      // ilike with wildcards is a substring match, so no schema change, no
+      // full-text index and no migration. At a few hundred rows per project the
+      // cost is trivial. A failure here is non-fatal: the vector results still
+      // stand on their own.
+      const { precise, broad } = extractKeywordTerms(message);
+
+      // PostgREST `or` filter grammar: content.ilike.*term*,content.ilike.*t2*
+      // Commas, parentheses and asterisks would break that grammar, so terms
+      // containing them are dropped rather than escaped.
+      const runKeywordQuery = async terms => {
+        const safe = terms.filter(t => !/[,()*]/.test(t));
+        if (safe.length === 0) return { rows: [], terms: safe };
+        const orFilter = safe.map(t => `content.ilike.*${t}*`).join(',');
+        const { data, error } = await supabase
+          .from('library_documents')
+          .select('id, title, category, content, source_url, project_id')
+          .eq('project_id', project_id)
+          .or(orFilter)
+          .limit(PROJECT_KEYWORD_MATCH_COUNT);
+        if (error) {
+          console.error('Project keyword retrieval error:', error);
+          return { rows: [], terms: safe };
+        }
+        return { rows: data || [], terms: safe };
+      };
+
+      let keywordTermsUsed = [];
+      if (precise.length > 0) {
+        const result = await runKeywordQuery(precise);
+        keywordDocs = result.rows;
+        keywordTermsUsed = result.terms;
+      }
+      // Fall back to the broad single words only if the precise terms found
+      // nothing at all.
+      if (keywordDocs.length === 0 && broad.length > 0) {
+        const result = await runKeywordQuery(broad);
+        keywordDocs = result.rows;
+        keywordTermsUsed = result.terms;
+      }
+      if (keywordDocs.length > 0) {
+        console.log(
+          'LIB-14: keyword pass matched ' + keywordDocs.length +
+          ' row(s) on terms: ' + keywordTermsUsed.join(' | ')
+        );
+      }
     }
 
     const { data: libraryHits, error: libraryError } = await supabase.rpc('match_library', {
@@ -676,7 +842,16 @@ router.post('/chat', async (req, res) => {
     // dedup when the same id also comes back from the similarity calls.
     const seen = new Set();
     const libraryDocs = [];
-    for (const d of [...(alwaysIncludedProjectDocs || []), ...(projectScopedDocs || []), ...(libraryHits || [])]) {
+    // LIB-14: keyword hits are placed BEFORE the similarity hits. Both are
+    // project-scoped and equally trustworthy, but a literal match on a term the
+    // user actually typed is the more direct answer to what was asked, and
+    // ordering decides which copy survives the dedup.
+    for (const d of [
+      ...(alwaysIncludedProjectDocs || []),
+      ...(keywordDocs || []),
+      ...(projectScopedDocs || []),
+      ...(libraryHits || []),
+    ]) {
       if (d && d.id && !seen.has(d.id)) {
         seen.add(d.id);
         libraryDocs.push(d);
