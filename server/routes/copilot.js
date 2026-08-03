@@ -362,7 +362,7 @@ async function getUserByEmail(email) {
   return user;
 }
 
-function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
+function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, projectManifest }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
 
@@ -429,6 +429,47 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode }) {
   if (memories && memories.length > 0) {
     prompt += `\n\n## Relevant Past Context`;
     memories.forEach(m => { prompt += `\n- ${m.content}`; });
+  }
+
+  // LIB-12: project document manifest.
+  //
+  // Similarity retrieval answers "what is most like this question", which is
+  // not the same as "what exists". The model only ever sees the chunks that
+  // ranked, so when asked whether something appears anywhere in a contract it
+  // reasons from a partial view and states absence with unwarranted
+  // confidence. Observed case: a project holding an eight-document variation
+  // pack returned six of them for one question, and the model reported that no
+  // fuel charge existed anywhere in the record. A fuel levy of 6.5% was in one
+  // of the two documents that did not rank.
+  //
+  // The manifest is the cheap structural fix: list every distinct document
+  // title held by the active project, so the model knows the shape of the full
+  // set even when it has only been given part of the contents. It costs one
+  // query and no embedding. Absence claims can then be qualified honestly
+  // rather than asserted.
+  if (projectManifest && projectManifest.length > 0) {
+    prompt +=
+      '\n\n## Documents Held in This Project\n' +
+      'The following is the COMPLETE list of documents loaded into this ' +
+      'project. It is the authoritative inventory of what exists.';
+    projectManifest.forEach(t => { prompt += `\n- ${t}`; });
+    prompt +=
+      '\n\nOnly some of these documents are retrieved for any given question, ' +
+      'based on relevance to what was asked. The section below contains the ' +
+      'retrieved extracts, which is a SUBSET of the list above.\n\n' +
+      'This distinction governs how you handle absence:\n' +
+      '- Never state or imply that something does not exist in this project ' +
+      'simply because it is missing from the retrieved extracts. Absence from ' +
+      'the extracts is not absence from the documents.\n' +
+      '- When a question turns on whether something appears anywhere, check ' +
+      'the manifest. If a document that would plausibly contain it has not ' +
+      'been retrieved, say so by name, and treat the point as unverified ' +
+      'rather than settled.\n' +
+      '- You may state positively that a document exists in this project if ' +
+      'it is on the manifest, even if you have not seen its contents. Be ' +
+      'clear that you are drawing on the inventory, not the text.\n' +
+      '- Where confirming an absence matters to the advice, recommend the ' +
+      'specific document be examined, naming it from the manifest.';
   }
 
   // LIB-1: single merged section now carries both library and project docs.
@@ -642,12 +683,40 @@ router.post('/chat', async (req, res) => {
       }
     }
 
+    // LIB-12: build the project document manifest. This is deliberately a
+    // separate, cheap query rather than something derived from the retrieval
+    // results, because its whole purpose is to describe documents that did NOT
+    // rank. Chunked documents carry titles of the form "Name (part 3 of 279)",
+    // so the part suffix is stripped and titles deduplicated back to one entry
+    // per source document. A failure here is non-fatal: the manifest is
+    // omitted and the answer proceeds without it.
+    let projectManifest = [];
+    if (project_id) {
+      const { data: manifestRows, error: manifestErr } = await supabase
+        .from('library_documents')
+        .select('title')
+        .eq('project_id', project_id);
+
+      if (manifestErr) {
+        console.error('Project manifest fetch error:', manifestErr);
+      } else {
+        const titles = new Set();
+        for (const row of manifestRows || []) {
+          if (!row || !row.title) continue;
+          const base = String(row.title).replace(/\s*\(part\s+\d+\s+of\s+\d+\)\s*$/i, '').trim();
+          if (base) titles.add(base);
+        }
+        projectManifest = Array.from(titles).sort();
+      }
+    }
+
     const systemPrompt = buildSystemPrompt({
       profile,
       project,
       memories,
       libraryDocs,
       mode,
+      projectManifest,
     });
 
     // PROF-1 Phase C: run through the non-streaming tool loop so Claude can
