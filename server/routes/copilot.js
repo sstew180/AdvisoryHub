@@ -369,6 +369,55 @@ async function getUserByEmail(email) {
 }
 
 // =============================================================================
+// MAY-5: assistant-message insert hardening.
+// =============================================================================
+// The user-message insert fails hard (no answer without a recorded prompt).
+// This helper gives the assistant side equivalent rigour without punishing
+// the user for a database fault: one retry after a short pause, and if that
+// also fails the full response is written to failed_message_log so the
+// transcript can be repaired by hand. Returns { saved, error } so the chat
+// route can flag an unrecorded exchange to the client.
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function saveAssistantMessage(sessionId, content) {
+  const row = { session_id: sessionId, role: 'assistant', content };
+
+  const { error: firstError } = await supabase.from('messages').insert(row);
+  if (!firstError) return { saved: true, error: null };
+
+  console.error('Assistant message insert failed, retrying once:', firstError);
+  await sleep(1000);
+
+  const { error: retryError } = await supabase.from('messages').insert(row);
+  if (!retryError) return { saved: true, error: null };
+
+  console.error('ASSISTANT MESSAGE INSERT FAILED AFTER RETRY. Session:', sessionId, retryError);
+
+  // Dead-letter write. Best effort: this must never throw, because the
+  // response still has to reach the user.
+  try {
+    const { error: logError } = await supabase.from('failed_message_log').insert({
+      session_id: sessionId,
+      role: 'assistant',
+      content,
+      error: retryError.message || String(retryError),
+    });
+    if (logError) {
+      console.error('DEAD-LETTER WRITE ALSO FAILED. Response text follows for manual recovery:', logError);
+      console.error(content);
+    }
+  } catch (deadLetterErr) {
+    console.error('DEAD-LETTER WRITE THREW. Response text follows for manual recovery:', deadLetterErr);
+    console.error(content);
+  }
+
+  return { saved: false, error: retryError.message || String(retryError) };
+}
+
+// =============================================================================
 // LIB-14: keyword term extraction for hybrid retrieval.
 //
 // Embeddings represent a chunk's DOMINANT meaning, which makes them poor at
@@ -641,10 +690,12 @@ router.post('/chat', async (req, res) => {
     if (requestedSessionId) {
       const { data: existingSession } = await supabase
         .from('sessions')
-        .select('id, user_id')
+        .select('id, user_id, deleted_at')
         .eq('id', requestedSessionId)
         .maybeSingle();
-      if (existingSession && existingSession.user_id === userId) {
+      // MAY-4: a soft-deleted session is never reused; a fresh session is
+      // created instead so new messages never attach to a hidden transcript.
+      if (existingSession && existingSession.user_id === userId && !existingSession.deleted_at) {
         activeSessionId = existingSession.id;
       }
     }
@@ -910,14 +961,8 @@ router.post('/chat', async (req, res) => {
 
     const responseHtml = toHtml(responseText);
 
-    const { error: assistantInsertError } = await supabase.from('messages').insert({
-      session_id: activeSessionId,
-      role: 'assistant',
-      content: responseText,
-    });
-    if (assistantInsertError) {
-      console.error('Failed to save assistant message:', assistantInsertError);
-    }
+    // MAY-5: hardened insert with retry and dead-letter fallback.
+    const assistantRecord = await saveAssistantMessage(activeSessionId, responseText);
 
     // =========================================================================
     // SVR-5: trigger automatic title generation for newly created sessions.
@@ -950,6 +995,11 @@ router.post('/chat', async (req, res) => {
       high_scrutiny_active: profile?.high_scrutiny || false,
       mode_active: mode === 'direct' ? 'direct' : 'guided',
       configuration_source: describeConfigurationSource(profile),
+      // MAY-5: null when the exchange was recorded normally; a human-readable
+      // warning when the assistant message could not be saved after retry.
+      record_warning: assistantRecord.saved
+        ? null
+        : 'This response could not be saved to the conversation record. It has been captured in the recovery log.',
     });
   } catch (err) {
     console.error('Copilot chat error:', err);
@@ -1230,6 +1280,7 @@ router.get('/sessions', async (req, res) => {
       .from('sessions')
       .select('id, title, summary, project_id, created_at')
       .eq('user_id', user.id)
+      .is('deleted_at', null) // MAY-4: soft-deleted sessions are hidden
       .order('created_at', { ascending: false })
       .limit(20);
     if (project_id) query = query.eq('project_id', project_id);
@@ -1270,6 +1321,7 @@ router.get('/sessions/archived', async (req, res) => {
       .from('sessions')
       .select('id, title, summary, project_id, created_at, archived_at')
       .eq('user_id', user.id)
+      .is('deleted_at', null) // MAY-4: deleted sessions never appear, even in archive
       .not('archived_at', 'is', null);
 
     // Restrict archived sessions to the active domain's projects.
@@ -1362,9 +1414,14 @@ router.delete('/sessions/:id', async (req, res) => {
 
     if (!existing) return res.status(404).json({ error: 'Session not found or not owned by user.' });
 
+    // MAY-4: soft delete. The session disappears from every list, but the row
+    // and all of its messages rows are retained as the conversation record.
+    // No user action ever hard-deletes a session: the messages FK cascades on
+    // hard delete (verified 4 Aug 2026), so a real DELETE would destroy the
+    // transcript.
     const { error } = await supabase
       .from('sessions')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id)
       .eq('user_id', user.id);
 
