@@ -623,7 +623,16 @@ function buildResponseRulesBlock(rules) {
     active.push('Depth: ' + depthInstruction);
   }
   if (r.type) {
-    active.push('Type: ' + r.type + '. Frame the response as this type of output.');
+    // ST-2: chip values like "analysis summary" collide with the Word
+    // document template names in the Document Creation guidance. The chip
+    // controls the SHAPE of the chat reply, not document creation.
+    active.push(
+      'Type: ' + r.type + '. Structure the chat reply itself as this type of ' +
+      'output. This is a formatting instruction only: do NOT call the ' +
+      'create_word_document tool and do not pause to ask whether a document ' +
+      'is wanted, unless the user has explicitly asked for a downloadable ' +
+      'document in their message.'
+    );
   }
 
   if (active.length === 0) return '';
@@ -649,6 +658,19 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, proj
     'drawing on best practice frameworks, Queensland legislation, and ' +
     'applicable standards. You cite your sources when drawing on ' +
     'retrieved documents. You write clearly and professionally.';
+
+  // ST-1: observed failure mode — the model occasionally ends its turn after
+  // a one-sentence announcement ("Let me retrieve the full set now"), as if
+  // retrieval were an action it performs in a later step. It is not: all
+  // retrieved material arrives with this message and there is no next step.
+  prompt +=
+    '\n\n## Single-Turn Completeness\n' +
+    'Everything you will receive for this question (retrieved document ' +
+    'extracts, skills, project context) is already included below. You ' +
+    'cannot retrieve anything further, and there is no follow-up step in ' +
+    'which you continue: this reply is your one and only opportunity to ' +
+    'answer. Produce the complete substantive response now. NEVER end your ' +
+    'reply after only announcing what you are about to do.';
 
   // Document creation guidance (PROF-1 Phase C).
   prompt +=
