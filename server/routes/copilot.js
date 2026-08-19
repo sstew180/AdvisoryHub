@@ -300,6 +300,18 @@ async function runWithTools({ baseParams, context, maxRounds = 3 }) {
       messages: currentMessages,
     });
 
+    // PT-1: 'pause_turn' means the model is NOT finished; the turn must be
+    // continued by resending with the partial assistant content appended.
+    // Previously this fell through to the final-text path and a one-sentence
+    // partial was returned to the user as if complete.
+    if (response.stop_reason === 'pause_turn') {
+      currentMessages = [
+        ...currentMessages,
+        { role: 'assistant', content: response.content },
+      ];
+      continue;
+    }
+
     if (response.stop_reason !== 'tool_use') {
       const text = response.content
         .filter(b => b.type === 'text')
