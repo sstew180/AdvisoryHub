@@ -571,8 +571,11 @@ function buildResponseRulesBlock(rules) {
       'exhaustive detail. Compress or omit lower-value sections of any ' +
       'skill output template.',
     detailed:
-      'Detailed. A comprehensive response. Full tables, complete registers, ' +
-      'and full skill output templates are appropriate.',
+      'Detailed. Complete coverage: full tables, complete registers, and ' +
+      'full skill output templates are appropriate. But complete in COVERAGE, ' +
+      'economical in EXPRESSION: every row and sentence must earn its place, ' +
+      'do not restate retrieved document text at length, and do not pad. ' +
+      'Aim for thorough, not maximal.',
   };
 
   if (r.length) {
@@ -1063,7 +1066,16 @@ router.post('/chat', async (req, res) => {
     const { text: responseText, documentUrl, documentFilename } = await runWithTools({
       baseParams: {
         model: 'claude-sonnet-4-6',
-        max_tokens: 8192, // raised from 2048 so full documents fit in one tool call
+        // RULES-2b: 8192 exists so full documents fit in one tool call, but
+        // the Power Apps connector enforces a ~120 second ceiling and a
+        // near-8192-token generation alone takes about that long. When the
+        // user selects Length: Detailed the model genuinely uses the budget,
+        // which is what timed out in testing. 4096 tokens (~3,000 words) is
+        // still a very large response and generates comfortably inside the
+        // ceiling. Document tool calls are unaffected unless Detailed is
+        // combined with a document request, accepted as an edge case until
+        // the async job pattern removes the ceiling.
+        max_tokens: (rules && rules.length === 'detailed') ? 4096 : 8192,
         system: systemPrompt,
         tools: TOOLS,
         messages: messagesForClaude,
