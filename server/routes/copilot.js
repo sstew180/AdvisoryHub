@@ -582,7 +582,30 @@ function buildResponseRulesBlock(rules) {
     active.push('Format: ' + r.format + '. Shape the entire response in this format.');
   }
   if (r.depth) {
-    active.push('Depth: ' + r.depth + '. Calibrate analytical depth accordingly.');
+    // RULES-2: depth controls how far the reasoning goes, not how many words
+    // it takes. Matched loosely because the chip labels may evolve.
+    const d = String(r.depth).toLowerCase();
+    let depthInstruction;
+    if (d.includes('rec')) {
+      depthInstruction =
+        'Full recommendation. Carry the analysis through to a firm, singular ' +
+        'recommended course of action with reasons, stated plainly. This ' +
+        'controls how FAR the reasoning goes, not how long the response is: ' +
+        'do not expand tables, registers, or background beyond what the ' +
+        'Length rule (or, absent one, a normal-length response) allows. ' +
+        'Compress the analysis; spend the words on the recommendation.';
+    } else if (d.includes('summ')) {
+      depthInstruction =
+        'Summary depth. Describe what the material shows; do not analyse ' +
+        'implications or make recommendations.';
+    } else if (d.includes('analy')) {
+      depthInstruction =
+        'Analysis depth. Analyse implications and trade-offs, but stop short ' +
+        'of recommending a course of action.';
+    } else {
+      depthInstruction = r.depth + '. Calibrate analytical depth accordingly, without expanding response length.';
+    }
+    active.push('Depth: ' + depthInstruction);
   }
   if (r.type) {
     active.push('Type: ' + r.type + '. Frame the response as this type of output.');
