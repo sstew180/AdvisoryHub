@@ -418,6 +418,33 @@ async function saveAssistantMessage(sessionId, content) {
 }
 
 // =============================================================================
+// MAY-3: project membership.
+// =============================================================================
+// project_members (MAY-2) lets a project be shared with a membership list.
+// Reads are owner-or-member; writes (rename, objectives, custom instructions,
+// archive, restore, delete) remain owner-only and are untouched. This helper
+// returns the ids of projects where the user appears as a member. A lookup
+// failure degrades to "no memberships" so personal projects always load.
+
+async function getMemberProjectIds(profileId) {
+  const { data, error } = await supabase
+    .from('project_members')
+    .select('project_id')
+    .eq('profile_id', profileId);
+  if (error) {
+    console.error('project_members lookup failed (treating as no memberships):', error);
+    return [];
+  }
+  return (data || []).map(r => r.project_id);
+}
+
+// Applies the owner-or-member read filter to a query over the projects table.
+function ownerOrMemberFilter(query, userId, memberIds) {
+  if (memberIds.length === 0) return query.eq('user_id', userId);
+  return query.or(`user_id.eq.${userId},id.in.(${memberIds.join(',')})`);
+}
+
+// =============================================================================
 // LIB-14: keyword term extraction for hybrid retrieval.
 //
 // Embeddings represent a chunk's DOMINANT meaning, which makes them poor at
@@ -519,7 +546,61 @@ function extractKeywordTerms(message) {
   };
 }
 
-function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, projectManifest }) {
+// RULES-1: response rule chips (Length / Format / Depth / Type).
+//
+// The app has always posted a rules object with every chat request; until now
+// the server never read it, so the chips were inert. This block turns any
+// non-empty rule into an explicit instruction appended at the END of the
+// system prompt, after the skills and documents, so it outranks the output
+// templates that methodology skills legitimately carry (a register skill
+// demands a full table; a Length: brief chip must win that argument).
+// Rules only apply in guided mode; direct (unguided) mode releases them.
+function buildResponseRulesBlock(rules) {
+  const r = rules || {};
+  const active = [];
+
+  const lengthMap = {
+    brief:
+      'Brief. Answer in a few short paragraphs at most. Give only the ' +
+      'essential findings and recommended next steps. Do NOT produce ' +
+      'exhaustive tables, full registers, or long structured outputs even ' +
+      'where a methodology skill specifies one; summarise the substance and ' +
+      'offer the full version on request.',
+    standard:
+      'Standard. A balanced response covering the substance without ' +
+      'exhaustive detail. Compress or omit lower-value sections of any ' +
+      'skill output template.',
+    detailed:
+      'Detailed. A comprehensive response. Full tables, complete registers, ' +
+      'and full skill output templates are appropriate.',
+  };
+
+  if (r.length) {
+    active.push('Length: ' + (lengthMap[r.length] || r.length + '. Honour this length setting strictly.'));
+  }
+  if (r.format) {
+    active.push('Format: ' + r.format + '. Shape the entire response in this format.');
+  }
+  if (r.depth) {
+    active.push('Depth: ' + r.depth + '. Calibrate analytical depth accordingly.');
+  }
+  if (r.type) {
+    active.push('Type: ' + r.type + '. Frame the response as this type of output.');
+  }
+
+  if (active.length === 0) return '';
+
+  return (
+    '\n\n## Response Rules (apply to this reply)\n' +
+    'The user has set explicit response controls for this reply. These are ' +
+    'deliberate instructions from the user and OVERRIDE any output format, ' +
+    'structure, or length implied by methodology skills, retrieved ' +
+    'documents, or preferences above. Apply them strictly:\n- ' +
+    active.join('\n- ')
+  );
+}
+
+function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, projectManifest, rules }) {
   const isGuided = mode !== 'direct';
   const prefs = effectivePreferences(profile, project);
 
@@ -647,6 +728,12 @@ function buildSystemPrompt({ profile, project, memories, libraryDocs, mode, proj
     });
   }
 
+  // RULES-1: appended last so the rules sit closest to the model's attention
+  // and outrank the skill output templates above. Guided mode only.
+  if (isGuided) {
+    prompt += buildResponseRulesBlock(rules);
+  }
+
   return prompt;
 }
 
@@ -658,6 +745,7 @@ router.post('/chat', async (req, res) => {
   const requestedSessionId = body.session_id || body.sessionId;
   const project_id = body.project_id || body.projectId;
   const mode = body.mode;
+  const rules = body.rules || {}; // RULES-1: Length / Format / Depth / Type chips
 
   if (!email || !message) {
     return res.status(400).json({ error: 'email and message are required in the request body.' });
@@ -943,6 +1031,7 @@ router.post('/chat', async (req, res) => {
       libraryDocs,
       mode,
       projectManifest,
+      rules, // RULES-1
     });
 
     // PROF-1 Phase C: run through the non-streaming tool loop so Claude can
@@ -1053,16 +1142,24 @@ router.get('/projects', async (req, res) => {
 
   try {
     const user = await getUserByEmail(email);
+    // MAY-3: reads are owner-or-member.
+    const memberIds = await getMemberProjectIds(user.id);
     let query = supabase
       .from('projects')
-      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
-      .eq('user_id', user.id)
+      .select('id, user_id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at')
       .is('archived_at', null);
+    query = ownerOrMemberFilter(query, user.id, memberIds);
     // When a domain (module) is supplied, show only that domain's projects.
     if (module_id) query = query.eq('module_id', module_id);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
-    res.json(data || []);
+    // MAY-3: access_role tells the client which projects it merely reads.
+    // Anything not owned arrived via membership. user_id is not exposed.
+    const rows = (data || []).map(({ user_id, ...p }) => ({
+      ...p,
+      access_role: user_id === user.id ? 'owner' : 'member',
+    }));
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1170,16 +1267,22 @@ router.get('/projects/archived', async (req, res) => {
 
   try {
     const user = await getUserByEmail(email);
+    // MAY-3: reads are owner-or-member, archived list included.
+    const memberIds = await getMemberProjectIds(user.id);
     let query = supabase
       .from('projects')
-      .select('id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at, archived_at')
-      .eq('user_id', user.id)
+      .select('id, user_id, name, description, objectives, custom_instructions, parent_id, artefact_preference, high_scrutiny, module_id, created_at, archived_at')
       .not('archived_at', 'is', null);
+    query = ownerOrMemberFilter(query, user.id, memberIds);
     if (module_id) query = query.eq('module_id', module_id);
     const { data, error } = await query.order('archived_at', { ascending: false });
 
     if (error) throw error;
-    res.json(data || []);
+    const rows = (data || []).map(({ user_id, ...p }) => ({
+      ...p,
+      access_role: user_id === user.id ? 'owner' : 'member',
+    }));
+    res.json(rows);
   } catch (err) {
     console.error('GetArchivedProjects error:', err);
     res.status(500).json({ error: err.message });
@@ -1288,11 +1391,15 @@ router.get('/sessions', async (req, res) => {
     // When a domain (module) is supplied, restrict sessions to that domain's
     // projects (sessions follow their project's domain).
     if (module_id && !project_id) {
-      const { data: domainProjects, error: dpErr } = await supabase
+      // MAY-3: include member projects so a delegate's own sessions held
+      // against a shared project stay visible in domain-filtered lists.
+      const memberIdsForDomain = await getMemberProjectIds(user.id);
+      let dpQuery = supabase
         .from('projects')
         .select('id')
-        .eq('user_id', user.id)
         .eq('module_id', module_id);
+      dpQuery = ownerOrMemberFilter(dpQuery, user.id, memberIdsForDomain);
+      const { data: domainProjects, error: dpErr } = await dpQuery;
       if (dpErr) throw dpErr;
       const ids = (domainProjects || []).map(p => p.id);
       // If the domain has no projects, there are no sessions to show.
@@ -1326,11 +1433,15 @@ router.get('/sessions/archived', async (req, res) => {
 
     // Restrict archived sessions to the active domain's projects.
     if (module_id) {
-      const { data: domainProjects, error: dpErr } = await supabase
+      // MAY-3: include member projects so a delegate's own sessions held
+      // against a shared project stay visible in domain-filtered lists.
+      const memberIdsForDomain = await getMemberProjectIds(user.id);
+      let dpQuery = supabase
         .from('projects')
         .select('id')
-        .eq('user_id', user.id)
         .eq('module_id', module_id);
+      dpQuery = ownerOrMemberFilter(dpQuery, user.id, memberIdsForDomain);
+      const { data: domainProjects, error: dpErr } = await dpQuery;
       if (dpErr) throw dpErr;
       const ids = (domainProjects || []).map(p => p.id);
       if (ids.length === 0) return res.json([]);
